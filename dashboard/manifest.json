@@ -1,0 +1,5 @@
+{
+ "name": "hermes-workbench", "label": "Workbench", "description": "Browser-native Hermes sessions, tools, approvals and subagents.",
+ "version": "0.1.0", "icon": "MessageSquare", "tab": {"path": "/workbench", "position": "before:chat"},
+ "entry": "dist/index.js", "css": "dist/style.css"
+}

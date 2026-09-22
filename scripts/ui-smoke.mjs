@@ -1,0 +1,34 @@
+import {chromium,expect} from '@playwright/test';
+import {writeFile,readFile} from 'node:fs/promises';
+const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||'/opt/hermes/.playwright/chromium_headless_shell-1234/chrome-linux/headless_shell',args:['--no-sandbox']});
+const page=await browser.newPage({viewport:{width:1600,height:1000}}); const errors=[],events=[]; let toolStarted=false;
+page.on('pageerror',e=>errors.push(e.message));page.on('websocket',ws=>ws.on('framereceived',f=>{try{const m=JSON.parse(String(f.payload));if(m.method==='event'){events.push(m.params.type);if(m.params.type==='tool.start') toolStarted=true;}}catch{}}));
+const report={};const testTitle='Workbench UI verification '+Date.now();
+page.on('framenavigated',f=>{if(f===page.mainFrame()) console.log('NAV',f.url())});
+page.on('websocket',ws=>{console.log('WS open');ws.on('close',()=>console.log('WS closed'));ws.on('framesent',f=>{try{const m=JSON.parse(String(f.payload));console.log('RPC',m.method)}catch{}})});
+page.on('console',m=>{if(m.type()==='error')console.log('CONSOLE',m.text())});
+const stage=async name=>console.log('STAGE',name,await page.evaluate(()=>({title:document.querySelector('.hwb-title')?.textContent,storage:sessionStorage.getItem('hermes-workbench:default:owned:v1')})));
+try {
+ await page.goto('http://127.0.0.1:9119/workbench');await expect(page.locator('.hwb-connection')).toHaveText('Connected');
+ await page.getByRole('button',{name:'Expand workbench'}).click();
+ await page.getByRole('textbox',{name:'Workspace directory'}).fill('/opt/data/hermes-workbench');
+ await page.getByRole('button',{name:'New session',exact:true}).click();await expect(page.getByRole('textbox',{name:'Message Hermes'})).toBeEnabled({timeout:30000});
+ page.once('dialog',d=>d.accept(testTitle));await page.getByRole('button',{name:'Rename',exact:true}).click();await expect(page.locator('.hwb-title')).toHaveText(testTitle,{timeout:15000});await stage('renamed');
+ await page.getByRole('textbox',{name:'Search sessions'}).fill('Workbench');
+ await page.getByRole('textbox',{name:'Message Hermes'}).fill('This is a bounded Workbench UI verification. First ask exactly one question with the clarify tool: "Run the browser verification?" with choices "Run verification" and "Cancel". Wait for my answer. If I choose Run verification, use the terminal tool to run python3 that sleeps 8 seconds, then writes the exact text WORKBENCH_UI_OK followed by a newline to /opt/data/hermes-workbench/evidence/ui-proof.txt and reads it back. Touch no other files. Reply only with the verified marker.');
+ await page.getByRole('button',{name:'Send',exact:true}).click();
+ await page.getByRole('button',{name:/^Run verification(?: \(Recommended\))?$/}).waitFor({timeout:150000});await page.getByRole('button',{name:/^Run verification(?: \(Recommended\))?$/}).click();
+ await page.getByRole('button',{name:'Answer',exact:true}).click();report.clarification=true;
+ await expect(page.getByRole('button',{name:'Answer',exact:true})).toHaveCount(0,{timeout:15000});
+ const saved=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('hermes-workbench:default:owned:v1')));report.identity=saved;
+ await page.reload();await expect(page.getByRole('textbox',{name:'Message Hermes'})).toBeEnabled({timeout:30000});report.reloadControl=true;
+ await expect(page.locator('.hwb-message.assistant').filter({hasText:'WORKBENCH_UI_OK'})).toBeVisible({timeout:180000});
+ report.historyRestored=true;report.proof=await readFile('evidence/ui-proof.txt','utf8');if(report.proof!=='WORKBENCH_UI_OK\n')throw Error('Wrong tool side effect');
+ const restored=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('hermes-workbench:default:owned:v1')));report.sameStoredSession=restored.sessions.some(s=>s.storedId===saved.sessions[0].storedId);if(!report.sameStoredSession)throw Error('Session not restored');
+ await page.getByRole('button',{name:'Expand workbench'}).click();await page.getByRole('textbox',{name:'Search sessions'}).fill('Workbench');
+ await page.locator('.hwb-tool').first().evaluate(el=>el.open=true);await page.screenshot({path:'evidence/workbench-desktop.png'});
+ await page.getByRole('button',{name:'Exit expanded view'}).click();await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'Expand workbench'}).click();await page.screenshot({path:'evidence/workbench-mobile.png'});
+ report.mobileOverflow=await page.locator('.hwb').evaluate(el=>el.scrollWidth>el.clientWidth+1);if(report.mobileOverflow)throw Error('Mobile horizontal overflow');
+ report.noTui=await page.locator('.hwb iframe,.hwb .xterm').count()===0;report.events=[...new Set(events)];report.errors=errors;if(errors.length)throw Error(errors.join(';'));
+ console.log(JSON.stringify(report,null,2));await writeFile('evidence/ui-smoke.json',JSON.stringify(report,null,2));
+} catch(e){await page.screenshot({path:'evidence/ui-failure.png'});await writeFile('evidence/ui-failure.txt',(await page.locator('body').innerText())+'\n'+JSON.stringify({errors,events}));throw e;}finally{await browser.close();}

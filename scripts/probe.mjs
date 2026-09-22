@@ -1,0 +1,10 @@
+import {chromium} from '@playwright/test';
+import {mkdir,writeFile} from 'node:fs/promises';
+const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||'/opt/hermes/.playwright/chromium_headless_shell-1234/chrome-linux/headless_shell',args:['--no-sandbox']});
+const page=await browser.newPage({viewport:{width:1480,height:960}});
+const errors=[]; page.on('pageerror',e=>errors.push(e.message));
+await page.goto('http://127.0.0.1:9119/workbench');
+await page.waitForTimeout(2000);
+console.log(JSON.stringify({title:await page.title(),url:page.url(),body:(await page.locator('body').innerText()).slice(0,8000),sdk:await page.evaluate(()=>({sdk:!!window.__HERMES_PLUGIN_SDK__,keys:Object.keys(window.__HERMES_PLUGIN_SDK__?.api||{}).filter(x=>/ws|Session|Plugin/.test(x))})),errors},null,2));
+await mkdir('evidence',{recursive:true}); await page.screenshot({path:'evidence/workbench.png',fullPage:true});
+await browser.close();
