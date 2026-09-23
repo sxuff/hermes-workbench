@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Required: types, tests, and a committed dashboard/dist that matches src/.
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Committed dashboard/dist matches the source
+        run: git diff --exit-code -- dashboard/dist
+      - run: python -m py_compile __init__.py workbench_cli.py demo/mock_model.py
+
+  # Advisory: the Hermes catalog admission checks against a pinned
+  # hermes-agent. It depends on a clone outside this repository, so it
+  # reports but does not block a merge.
+  hermes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned Hermes
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/NousResearch/hermes-agent.git /tmp/hermes-agent
+          git -C /tmp/hermes-agent fetch --depth=1 origin 8a492617e1239ab90bd3e3f7794b1e443f37a287
+          git -C /tmp/hermes-agent checkout --detach 8a492617e1239ab90bd3e3f7794b1e443f37a287
+          python -m pip install -e /tmp/hermes-agent
+      - run: hermes plugins validate .
+      - run: hermes plugins doctor . --ci
