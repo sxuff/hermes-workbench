@@ -1,3 +1,14 @@
 name: hermes-workbench
-version: 0.1.0
-description: Browser-native Hermes sessions, tools and approvals.
+version: 0.2.0
+manifest_version: 2
+api_version: 1
+requires_hermes: ">=0.21"
+description: >-
+  The Hermes desktop app in your browser. `hermes workbench` opens the desktop
+  interface as its own app window, served by the dashboard. Registers no tools or hooks.
+author: sxuff
+license: MIT
+homepage: https://github.com/sxuff/hermes-workbench
+tags: [ui, sessions, web]
+provides_tools: []
+provides_hooks: []

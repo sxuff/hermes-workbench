@@ -1,6 +1,6 @@
 {
   "name": "hermes-workbench",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Browser-native sessions for Hermes Agent, using its authenticated native gateway.",
@@ -8,7 +8,9 @@
     "build": "node scripts/build.mjs",
     "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "install:plugin": "node scripts/install.mjs"
+    "install:plugin": "node scripts/install.mjs",
+    "smoke:fixture": "node scripts/fixture-smoke.mjs",
+    "smoke:desktop": "node scripts/desktop-smoke.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
@@ -16,5 +18,8 @@
     "typescript": "^5.9.0",
     "@playwright/test": "^1.55.0"
   },
-  "dependencies": {"dompurify": "^3.2.0", "marked": "^16.0.0"}
+  "dependencies": {
+    "dompurify": "^3.2.0",
+    "marked": "^16.0.0"
+  }
 }

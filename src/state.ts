@@ -13,12 +13,15 @@ export interface ToolState {
   summary?: string;
   [key: string]: unknown;
 }
+export interface TodoItem { id?: string; content?: string; status?: string; [key: string]: unknown }
 export interface ThreadState {
   session: NativeSession;
   messages: NativeMessage[];
   streamingText: string;
   reasoningText: string;
+  /** Live tool rows by ID. Each is also placed in `messages` at the point it started. */
   tools: Record<string, ToolState>;
+  todos: TodoItem[];
   approvals: Approval[];
   requests: ServerRequest[];
   agents: Subagent[];
@@ -66,6 +69,16 @@ function replaceThread(state: WorkbenchState, id: string, transform: (t: ThreadS
   const t = state.threads[id];
   return t ? { ...state, threads: { ...state.threads, [id]: transform(t) } } : state;
 }
+function todosOf(v: unknown): TodoItem[] | undefined {
+  const todos = Array.isArray(v) ? v : record(v).todos;
+  return Array.isArray(todos) ? todos.map(record) as TodoItem[] : undefined;
+}
+/** Seal streamed text and reasoning into their own segment so later rows keep arrival order. */
+function sealSegment(t: ThreadState): ThreadState {
+  if (!t.streamingText && !t.reasoningText) return t;
+  return { ...t, streamingText: '', reasoningText: '',
+    messages: [...t.messages, { role: 'assistant', text: t.streamingText, reasoning: t.reasoningText, interim: true }] };
+}
 function boundThread(session: NativeSession, old?: ThreadState): ThreadState {
   const inflight = record(session.inflight);
   const messages = [...session.messages];
@@ -81,6 +94,7 @@ function boundThread(session: NativeSession, old?: ThreadState): ThreadState {
   }
   return {
     session, messages, streamingText: text(inflight.assistant), reasoningText: '', tools: {},
+    todos: todosOf(session.todo_state) ?? old?.todos ?? [],
     approvals: session.pending_approval ? [session.pending_approval] : [], requests,
     agents: old?.agents ?? [], running: session.running === true, ownership: 'owned',
     error: text(inflight.error) || null, status: session.status ?? (session.running ? 'working' : 'idle'),
@@ -155,11 +169,12 @@ function reduceEvent(state: WorkbenchState, event: GatewayEvent): WorkbenchState
         ...(typeof p.title === 'string' ? { title: p.title } : {}),
       } };
       case 'session.usage': return { ...t, usage: p };
-      case 'message.start': return { ...t, running: true, status: 'working', streamingText: '', reasoningText: '', error: null };
+      case 'message.start': return { ...t, running: true, status: 'working', streamingText: '', reasoningText: '', tools: {}, error: null };
       case 'message.delta': return { ...t, running: true, streamingText: t.streamingText + text(p.text) };
       case 'thinking.delta':
       case 'reasoning.delta': return { ...t, reasoningText: t.reasoningText + text(p.text) };
-      case 'message.interim': return { ...t, messages: [...t.messages, { role: 'assistant', text: text(p.text), interim: true }], streamingText: '' };
+      case 'message.interim': return { ...t, streamingText: '', reasoningText: '',
+        messages: [...t.messages, { role: 'assistant', text: text(p.text) || t.streamingText, reasoning: t.reasoningText, interim: true }] };
       case 'message.complete': {
         const body = typeof p.text === 'string' ? p.text : t.streamingText;
         const last = t.messages[t.messages.length - 1];
@@ -176,12 +191,20 @@ function reduceEvent(state: WorkbenchState, event: GatewayEvent): WorkbenchState
       case 'tool.complete': {
         const id = text(p.tool_id);
         if (!id) return t;
-        const tool = t.tools[id];
-        return { ...t, tools: { ...t.tools, [id]: {
-          ...tool, ...p, tool_id: id, name: text(p.name) || tool?.name || 'tool',
-          status: event.type === 'tool.complete' ? 'complete' : tool?.status ?? 'running',
-        } } };
+        const known = t.tools[id];
+        // A tool row lands where it started; text streamed before it is sealed above it.
+        const base = known ? t : sealSegment(t);
+        const tool: ToolState = {
+          ...known, ...p, tool_id: id, name: text(p.name) || known?.name || 'tool',
+          status: event.type === 'tool.complete' ? 'complete' : known?.status ?? 'running',
+        };
+        const row = { ...tool, role: 'tool' as const, live: true };
+        const index = base.messages.findIndex(m => m.role === 'tool' && m.tool_id === id);
+        const messages = index < 0 ? [...base.messages, row] : base.messages.map((m, i) => i === index ? row : m);
+        const todos = event.type === 'tool.complete' ? todosOf(p.todos) : undefined;
+        return { ...base, messages, tools: { ...base.tools, [id]: tool }, ...(todos ? { todos } : {}) };
       }
+      case 'todo.updated': return { ...t, todos: todosOf(p.todos) ?? t.todos };
       case 'approval.request':
       case 'clarify.request':
       case 'sudo.request':

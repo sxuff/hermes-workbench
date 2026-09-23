@@ -50,6 +50,8 @@ export interface ClientOptions {
   connectTimeoutMs?: number; requestTimeoutMs?: number;
   autoReconnect?: boolean; reconnectDelayMs?: number;
   heartbeatIntervalMs?: number; heartbeatDeadlineMs?: number;
+  /** Hermes profile to scope every call to; invalid names fall back to `default`. */
+  profile?: string;
 }
 export interface IWorkbenchClient {
   readonly state: WorkbenchState;
@@ -107,7 +109,8 @@ export class WorkbenchClient implements IWorkbenchClient {
   private owned = new Set<string>();
   private remembered = new Map<string, Remembered>();
   private restoredActive: string | null = null;
-  private readonly storageKey = 'hermes-workbench:default:owned:v1';
+  readonly profile: string;
+  private readonly storageKey: string;
   private persistRemembered(): void {
     if (typeof window === 'undefined') return;
     try { globalThis.sessionStorage?.setItem(this.storageKey, JSON.stringify({sessions:[...this.remembered.values()],active:this.current.activeSessionId})); } catch {}
@@ -127,8 +130,10 @@ export class WorkbenchClient implements IWorkbenchClient {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectAttempts = 0;
   private wantConnection = false;
-  private readonly options: Required<ClientOptions>;
+  private readonly options: Required<Omit<ClientOptions, 'profile'>>;
   constructor(private readonly sdk: SDKLike, options: ClientOptions = {}) {
+    this.profile = typeof options.profile === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(options.profile) ? options.profile : 'default';
+    this.storageKey = `hermes-workbench:${this.profile}:owned:v1`;
     this.options = {
       socketFactory: options.socketFactory ?? (url => new WebSocket(url)),
       connectTimeoutMs: options.connectTimeoutMs ?? 15_000,
@@ -346,7 +351,7 @@ export class WorkbenchClient implements IWorkbenchClient {
   }
   private async controlled<T>(sessionId: string, method: string, extra: Record<string, unknown> = {}): Promise<T> {
     this.requireOwned(sessionId);
-    try { return await this.rpc<T>(method, { ...extra, session_id: sessionId, profile: 'default' }); }
+    try { return await this.rpc<T>(method, { ...extra, session_id: sessionId, profile: this.profile }); }
     catch (error) {
       if (error instanceof WorkbenchRpcError && [4001, 4007, 4090, 4122].includes(error.code ?? 0)) this.revoke(sessionId, error.message);
       this.emit({ type: 'error', sessionId, error: errorOf(error).message }); throw error;
@@ -359,7 +364,7 @@ export class WorkbenchClient implements IWorkbenchClient {
     const stored = string(data.stored_session_id) || string(data.session_key) || string(data.resumed) || string(info.stored_session_id);
     if (!sid || !stored || !Array.isArray(data.messages)) throw new Error('Gateway returned an incomplete session identity or transcript');
     // Older launch-profile responses use an empty profile_name. Explicit other profiles are refused.
-    if (info.profile_name && info.profile_name !== 'default') throw new OwnershipError('Gateway returned a session outside the default profile');
+    if (info.profile_name && info.profile_name !== this.profile) throw new OwnershipError(`Gateway returned a session outside the ${this.profile} profile`);
     const session = { ...data, session_id: sid, stored_session_id: stored, messages: data.messages, info } as NativeSession;
     if (previousSessionId && previousSessionId !== sid) { this.owned.delete(previousSessionId); this.remembered.delete(previousSessionId); }
     this.owned.add(sid); this.remembered.set(sid, { liveId: sid, storedId: stored });
@@ -373,7 +378,7 @@ export class WorkbenchClient implements IWorkbenchClient {
   }
   async createSession(options: CreateSessionOptions = {}): Promise<NativeSession> {
     // Pick only declared fields so JS callers cannot override profile/source/safety flags.
-    const params: Record<string, unknown> = { profile: 'default', source: 'dashboard', close_on_disconnect: false, hidden: false };
+    const params: Record<string, unknown> = { profile: this.profile, source: 'dashboard', close_on_disconnect: false, hidden: false };
     for (const key of ['title', 'cwd', 'model', 'provider', 'reasoning_effort', 'fast'] as const) if (options[key] !== undefined) params[key] = options[key];
     return this.bind(await this.rpc('session.create', params));
   }
@@ -387,16 +392,16 @@ export class WorkbenchClient implements IWorkbenchClient {
     // before returning. Refuse non-leaf history instead of checking too late.
     const api = object(this.sdk.api);
     if (typeof api.getSessionLatestDescendant !== 'function') throw new OwnershipError('This dashboard cannot verify session lineage. Resume is disabled.');
-    const lineage = object(await api.getSessionLatestDescendant(storedSessionId, 'default'));
+    const lineage = object(await api.getSessionLatestDescendant(storedSessionId, this.profile));
     if (lineage.session_id !== storedSessionId || lineage.changed === true) throw new OwnershipError('This session has a newer continuation. Open the latest session from the list rather than its ancestor.');
-    const live = await this.rpc<{ sessions: Array<{ id: string; session_key: string }> }>('session.active_list', { profile: 'default' });
+    const live = await this.rpc<{ sessions: Array<{ id: string; session_key: string }> }>('session.active_list', { profile: this.profile });
     if (!Array.isArray(live.sessions)) throw new OwnershipError('Cannot verify live session ownership');
     const foreign = live.sessions.find(s => s.session_key === storedSessionId && s.id !== previousSessionId);
     if (foreign) throw new OwnershipError('This session is already live outside this Workbench client. No take-control operation is available.');
     if (previousSessionId) this.resuming.add(previousSessionId);
     try {
     const raw = await this.rpc('session.resume', {
-      session_id: storedSessionId, profile: 'default', source: 'dashboard', close_on_disconnect: false,
+      session_id: storedSessionId, profile: this.profile, source: 'dashboard', close_on_disconnect: false,
       lazy: false, defer_history: false, omit_messages: false,
     });
     const data = object(raw);
@@ -418,7 +423,7 @@ export class WorkbenchClient implements IWorkbenchClient {
   }
   async listSessions(limit = 200): Promise<SessionSummary[]> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('Session limit must be an integer from 1 to 1000');
-    const result = await this.rpc<{ sessions: SessionSummary[] }>('session.list', { profile: 'default', limit, include_hidden: false });
+    const result = await this.rpc<{ sessions: SessionSummary[] }>('session.list', { profile: this.profile, limit, include_hidden: false });
     if (!Array.isArray(result.sessions)) throw new Error('Invalid session list response');
     this.emit({ type: 'sessions', sessions: result.sessions }); return result.sessions;
   }
