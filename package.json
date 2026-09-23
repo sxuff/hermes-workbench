@@ -1,6 +1,6 @@
 {
   "name": "hermes-workbench",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "The Hermes desktop app in your browser, as a Hermes plugin.",
