@@ -9,7 +9,7 @@ Everything in `docs/media` comes from real Hermes runs, not mockups. Hermes runs
 | `capture.mjs` | 2x screenshots of four sessions, the `/` menu and the model picker |
 | `compose.mjs` | `banner.png` (1200×600, plugin catalog) and `hero.png` (1600×900, README) from a screenshot |
 | `record.mjs` | `out/app.mp4`, a screen recording of the bug fix, footage for the clip |
-| `video/` | `launch.mp4`, the 15-second clip ([HyperFrames](https://github.com/heygen-com/hyperframes) composition) |
+| `video/` | the 15-second launch clip, rendered locally and not committed ([HyperFrames](https://github.com/heygen-com/hyperframes) composition) |
 
 ## Setup (Windows, Git Bash)
 
