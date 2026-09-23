@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<!--
+  Frame 2: the app does the work. Real footage (assets/app.mp4, demo/record.mjs) of the
+  Workbench solving the demo bug, in the same browser frame as the published images.
+  Three hard-cut segments of one source, each at a constant rate:
+    typing  0.5–4.6s  at 2x  → 2.05s
+    working 4.6–28.8s at 5x  → 4.84s
+    result 28.8–31.3s at 1x  → 2.51s
+  Motion: nudge-curve (window rise), coordinate-target-zoom (push-in on the result),
+  ambient-glow-bloom (hero bloom behind the window).
+-->
+<html lang="en"><head></head>
+  <body>
+    <template>
+      <div data-hf-id="hf-suum" id="app-root" data-composition-id="app-scene" data-duration="9.4" data-width="1920" data-height="1080">
+        <style>
+          #app-root {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+          }
+          .app-glow {
+            position: absolute;
+            left: 160px;
+            right: 160px;
+            top: 120px;
+            height: 900px;
+            background: radial-gradient(ellipse 50% 45% at 50% 55%, rgba(150, 190, 255, 0.95), rgba(150, 190, 255, 0) 70%);
+            opacity: 0;
+            z-index: 1;
+          }
+          /* Separate wrappers per transform: rise (y), zoom scale, zoom counter-translate. */
+          .app-rise,
+          .app-zoom-outer,
+          .app-zoom-inner {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+          }
+          .app-zoom-outer {
+            transform-origin: 50% 50%;
+          }
+          .app-window {
+            position: absolute;
+            left: 180px;
+            top: 61px;
+            width: 1560px;
+            height: 1019px;
+            border-radius: 18px 18px 0 0;
+            overflow: hidden;
+            background: #ffffff;
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.08), 0 40px 110px -30px rgba(0, 12, 70, 0.6), 0 16px 40px -16px rgba(0, 12, 70, 0.4);
+          }
+          .app-chrome {
+            height: 44px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 0 18px;
+            background: #f1f3f5;
+            border-bottom: 2px solid #e3e6ea;
+          }
+          .app-dots {
+            display: flex;
+            gap: 9px;
+            width: 70px;
+          }
+          .app-dots span {
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background: #d4d9df;
+          }
+          .app-url {
+            flex: 1;
+            max-width: 520px;
+            margin: 0 auto;
+            height: 30px;
+            border-radius: 15px;
+            background: #ffffff;
+            box-shadow: inset 0 0 0 2px #e1e4e8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: "Segoe UI", sans-serif;
+            font-size: 17px;
+            color: #2b3238;
+          }
+          .app-url .app-path {
+            color: #6b737c;
+          }
+          .app-spacer {
+            width: 70px;
+          }
+          .app-screen {
+            position: relative;
+            width: 1560px;
+            height: 975px;
+            background: #fcfcfd;
+          }
+          .app-screen video {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+          }
+        </style>
+
+        <div data-hf-id="hf-l25b" class="app-glow" id="app-glow" data-layout-allow-overflow=""></div>
+        <div data-hf-id="hf-psgb" class="app-rise" id="app-rise" data-layout-allow-overflow="">
+          <div data-hf-id="hf-242i" class="app-zoom-outer" id="app-zoom-outer">
+            <div data-hf-id="hf-v13a" class="app-zoom-inner" id="app-zoom-inner">
+              <div data-hf-id="hf-etgy" class="app-window">
+                <div data-hf-id="hf-cbqg" class="app-chrome">
+                  <div data-hf-id="hf-x2uq" class="app-dots"><span data-hf-id="hf-uckh"></span><span data-hf-id="hf-l73p"></span><span data-hf-id="hf-me0s"></span></div>
+                  <div data-hf-id="hf-0ov8" class="app-url">127.0.0.1:9119<span data-hf-id="hf-y4dc" class="app-path">/workbench</span></div>
+                  <div data-hf-id="hf-4z26" class="app-spacer"></div>
+                </div>
+                <div data-hf-id="hf-22ki" class="app-screen">
+                  <video data-hf-id="hf-wsvm" id="app-typing" class="clip" src="assets/app.mp4" data-start="0" data-duration="2.05" data-media-start="0.5" data-playback-rate="2" data-track-index="0" muted playsinline></video>
+                  <video data-hf-id="hf-ju0a" id="app-working" class="clip" src="assets/app.mp4" data-start="2.05" data-duration="4.84" data-media-start="4.6" data-playback-rate="5" data-track-index="0" muted playsinline></video>
+                  <video data-hf-id="hf-l7t8" id="app-result" class="clip" src="assets/app.mp4" data-start="6.89" data-duration="2.51" data-media-start="28.8" data-playback-rate="1" data-track-index="0" muted playsinline></video>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <script>
+          const tl = gsap.timeline({ paused: true });
+
+          // nudge-curve: slow-fast-slow rise, 700px scaled from the reference 270px travel
+          // (10/65/25 distance, tail >= 3x ramp-in in time).
+          tl.fromTo("#app-rise", { y: 700 }, { y: 630, duration: 0.14, ease: "power3.in", immediateRender: true }, 0);
+          tl.to("#app-rise", { y: 175, duration: 0.12, ease: "none" }, 0.14);
+          tl.to("#app-rise", { y: 0, duration: 0.46, ease: "power4.out" }, 0.26);
+
+          // ambient-glow-bloom (hero bloom): lands with the window's settle, then a bounded breathe.
+          const GLOW_PEAK = 0.34;
+          tl.fromTo("#app-glow", { opacity: 0, scale: 0.85 }, { opacity: GLOW_PEAK, scale: 1, duration: 0.7, ease: "power2.out" }, 0.02);
+          const glow = document.getElementById("app-glow");
+          const phase = { p: 0 };
+          tl.to(phase, {
+            p: Math.PI * 2 * 2,
+            duration: 8.6,
+            ease: "none",
+            onUpdate: () => {
+              const s = Math.sin(phase.p);
+              glow.style.opacity = String(GLOW_PEAK + s * 0.05);
+              glow.style.transform = `scale(${1 + s * 0.02})`;
+            },
+          }, 0.72);
+
+          // coordinate-target-zoom: push in on the result table + "All 3 tests pass".
+          // Target on the final footage frame: (856, 592) in 1440x900 footage px, scaled
+          // 1560/1440 into the window at (180, 105) → canvas (1107, 746), offset (147, 206).
+          // Full centering (T = -offset) would lift the window's right and bottom edges into
+          // frame, so T is clamped to keep the window covering the canvas at this scale:
+          // right edge (1740 + Tx - 960) * S + 960 >= 1920, bottom (540 + Ty) * S >= 540,
+          // and the table's right edge (canvas x 1713) stays inside 1920.
+          const ZOOM_SCALE = 1.32;
+          tl.fromTo("#app-zoom-outer", { scale: 1 }, { scale: ZOOM_SCALE, duration: 1.1, ease: "power3.inOut", immediateRender: false }, 7.25);
+          tl.fromTo("#app-zoom-inner", { x: 0, y: 0 }, { x: -40, y: -125, duration: 1.1, ease: "power3.inOut", immediateRender: false }, 7.25);
+
+          window.__timelines["app-scene"] = tl;
+        </script>
+      </div>
+    </template>
+  </body>
+</html>

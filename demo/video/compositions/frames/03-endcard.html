@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<!--
+  Frame 3: install it. Collapse wordmark (Nous display face, local file), tagline, and the
+  two commands. Motion: waterfall-entry (binary reveals, power4.out, overlapping by weight),
+  ambient-glow-bloom (bloom-and-hold behind the wordmark; scene < 3.5s so no breathe).
+-->
+<html lang="en"><head></head>
+  <body>
+    <template>
+      <div data-hf-id="hf-yqpy" id="end-root" data-composition-id="end-scene" data-duration="3" data-width="1920" data-height="1080">
+        <style>
+          @font-face {
+            font-family: "Collapse";
+            src: url("assets/fonts/Collapse-Bold.woff2") format("woff2");
+            font-weight: 700;
+          }
+          #end-root {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+          }
+          .end-glow {
+            position: absolute;
+            left: -120px;
+            top: 80px;
+            width: 1500px;
+            height: 760px;
+            background: radial-gradient(ellipse 50% 50% at 45% 50%, rgba(3, 20, 90, 0.9), rgba(3, 20, 90, 0) 72%);
+            opacity: 0;
+            z-index: 1;
+          }
+          .end-stack {
+            position: absolute;
+            left: 150px;
+            top: 170px;
+            width: 1500px;
+            z-index: 2;
+          }
+          .end-word {
+            display: block;
+            font-family: "Collapse", Georgia, serif;
+            font-weight: 700;
+            font-size: 178px;
+            line-height: 0.9;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #f5f8ff;
+            opacity: 0;
+          }
+          .end-tagline {
+            display: block;
+            margin-top: 44px;
+            font-family: "Segoe UI", sans-serif;
+            font-size: 44px;
+            color: #dbe7ff;
+            opacity: 0;
+          }
+          .end-cmds {
+            margin-top: 56px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 16px;
+          }
+          .end-cmd {
+            display: inline-block;
+            padding: 16px 28px;
+            border-radius: 12px;
+            background: #06164a;
+            box-shadow: 0 0 0 2px rgba(150, 190, 255, 0.35);
+            font-family: "JetBrains Mono", monospace;
+            font-size: 34px;
+            color: #f5f8ff;
+            opacity: 0;
+          }
+          .end-cmd .end-prompt {
+            color: #7fb0ff;
+            margin-right: 18px;
+          }
+        </style>
+
+        <div data-hf-id="hf-w24r" class="end-glow" id="end-glow" data-layout-allow-overflow=""></div>
+        <div data-hf-id="hf-pweo" class="end-stack">
+          <span data-hf-id="hf-i2pp" class="end-word" id="end-w1">Hermes</span>
+          <span data-hf-id="hf-8y99" class="end-word" id="end-w2">Workbench</span>
+          <span data-hf-id="hf-qgpd" class="end-tagline" id="end-tag">The Hermes desktop app, in your browser.</span>
+          <div data-hf-id="hf-00qj" class="end-cmds">
+            <span data-hf-id="hf-btfq" class="end-cmd" id="end-c1"><span data-hf-id="hf-xqq5" class="end-prompt">$</span>hermes plugins install sxuff/hermes-workbench --enable</span>
+            <span data-hf-id="hf-sgyp" class="end-cmd" id="end-c2"><span data-hf-id="hf-p8ld" class="end-prompt">$</span>hermes workbench</span>
+          </div>
+        </div>
+
+        <script>
+          const tl = gsap.timeline({ paused: true });
+          const F = 1 / 60;
+
+          // ambient-glow-bloom, bloom-and-hold: lands on the wordmark's settle.
+          tl.fromTo("#end-glow", { opacity: 0, scale: 0.9 }, { opacity: 0.4, scale: 1, duration: 0.6, ease: "power2.out" }, 0);
+
+          // waterfall-entry: anchors travel further and longer, lighter items snap, overlapping.
+          const t0 = 0.08;
+          tl.set("#end-w1", { opacity: 1, y: 80 }, t0);
+          tl.to("#end-w1", { y: 0, duration: 0.2, ease: "power4.out" }, t0);
+          const t1 = t0 + 0.2 - F;
+          tl.set("#end-w2", { opacity: 1, y: 76 }, t1);
+          tl.to("#end-w2", { y: 0, duration: 0.2, ease: "power4.out" }, t1);
+          const t2 = t1 + 0.2 + 2 * F;
+          tl.set("#end-tag", { opacity: 1, y: 45 }, t2);
+          tl.to("#end-tag", { y: 0, duration: 0.15, ease: "power4.out" }, t2);
+          const t3 = t2 + 0.15 - F;
+          tl.set("#end-c1", { opacity: 1, y: 40 }, t3);
+          tl.to("#end-c1", { y: 0, duration: 0.14, ease: "power4.out" }, t3);
+          const t4 = t3 + 0.14 - F;
+          tl.set("#end-c2", { opacity: 1, y: 40 }, t4);
+          tl.to("#end-c2", { y: 0, duration: 0.13, ease: "power4.out" }, t4);
+
+          window.__timelines["end-scene"] = tl;
+        </script>
+      </div>
+    </template>
+  </body>
+</html>

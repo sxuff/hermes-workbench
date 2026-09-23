@@ -2,6 +2,14 @@
 
 The Hermes desktop app, in your browser. `hermes workbench` opens the desktop app's own interface (sessions, bots and group chats, `/` commands, model picker, attachments, skills, cron, approvals) as a browser tab, served by your Hermes install. Useful on a headless server or VPS, on a machine where you can't install the desktop app, or on a tablet.
 
+[![Hermes Workbench: the Hermes desktop app in a browser tab](docs/media/hero.png)](docs/media/launch.mp4)
+
+[Watch the 15-second clip](docs/media/launch.mp4): one command, then Hermes finds and fixes a real bug in the browser.
+
+| `/` commands | Model picker |
+| --- | --- |
+| ![Slash command menu](docs/media/slash-commands.png) | ![Model picker](docs/media/model-picker.png) |
+
 ## Get started
 
 ```sh
@@ -69,7 +77,7 @@ The dashboard is one machine-level server that loads UI plugins from the default
 
 ## Verified on the installed runtime
 
-- 18 deterministic adapter/reducer tests, TypeScript check, production build.
+- 20 deterministic adapter/reducer tests, TypeScript check, production build.
 - Real native browser session: terminal writes and reads `WORKBENCH_NATIVE_OK`.
 - Real UI: create, rename, send, clarification choice/answer, reload mid-task, native resume, terminal side effect `WORKBENCH_UI_OK`, final transcript.
 - Same durable session identity before/after reload.
@@ -83,14 +91,18 @@ Local evidence is in `evidence/native-smoke.json` and `evidence/ui-smoke.json`; 
 
 ## Safety and limits
 
-- Default profile only. No cross-profile writes.
+- Every call is scoped to one profile, the one in the page URL.
 - No public listener, credential changes, tunnel, startup service, commit or push is installed by this project.
 - Single-user trusted-host interface. Client-side preflight is not a server-side atomic multi-user lease. Existing live sessions belonging to other clients are refused; non-leaf session history is refused before native resume can redirect it. Concurrent same-account control races still require gateway-level leases to eliminate.
 - Browser identity bookmarks are IDs, not credentials, and live only in sessionStorage. They survive refresh in the same tab, not arbitrary new-device takeover.
 - Snapshot recovery is not a claim of lossless token replay. Completion events arriving during resume are buffered and applied after the snapshot; uncertain outgoing mutations are never retried automatically.
 - Approval decisions are fail-closed and covered by transport fixtures, but dangerous-command approvals and delegated-agent controls have not been exercised in the live end-to-end run.
 - Subagent controls require native ownership evidence. Missing evidence hides control rather than guessing ownership.
-- No file explorer, checkpoint diff review, artifact preview, attachments, slash commands, model picker, or multi-user access management yet. The host dashboard remains available for its existing management functions.
+- The built-in interface has no file explorer, checkpoint diff review, artifact preview, attachments, slash commands or model picker; the desktop interface has all of them. Neither does multi-user access management.
+
+## Demo visuals
+
+The images and clip come from real Hermes runs against a scripted model in a throwaway home; `demo/README.md` shows how to rebuild them.
 
 ## Implementation
 
