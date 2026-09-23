@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #0a3ad6;
+      }
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      /* Shared backdrop across all scenes: the published images' Nous blue, built from a solid
+         field plus radial glows (full-frame linear gradients band under H.264). */
+      .bg {
+        position: absolute;
+        inset: 0;
+        background: #0a47ee;
+        overflow: hidden;
+      }
+      .bg-glow {
+        position: absolute;
+        border-radius: 50%;
+      }
+      .bg-glow-deep {
+        width: 1500px;
+        height: 1100px;
+        left: -500px;
+        top: -560px;
+        background: radial-gradient(closest-side, rgba(4, 26, 110, 0.95), rgba(4, 26, 110, 0));
+      }
+      .bg-glow-light {
+        width: 1700px;
+        height: 1100px;
+        left: 420px;
+        top: 520px;
+        background: radial-gradient(closest-side, rgba(110, 165, 255, 0.75), rgba(110, 165, 255, 0));
+      }
+      .bg-glow-mid {
+        width: 1200px;
+        height: 900px;
+        left: 1100px;
+        top: -380px;
+        background: radial-gradient(closest-side, rgba(40, 110, 255, 0.7), rgba(40, 110, 255, 0));
+      }
+      /* Terminal scene: the registry panel reads its contract tokens from the host. */
+      #terminal-host {
+        position: absolute;
+        left: 210px;
+        top: 230px;
+        width: 1500px;
+        height: 620px;
+        --bg: transparent;
+        --surface: #0d1117;
+        --fg: #e6edf3;
+        --muted: #8b949e;
+        --border: #30363d;
+        --accent: #4a84fe;
+        --accent-2: #a5c8ff;
+        --brand: #55a583;
+        --font-mono: "JetBrains Mono", monospace;
+        --radius: 16px;
+        --ctr-font-size: 44px;
+      }
+      #term-glow {
+        position: absolute;
+        left: 160px;
+        top: 90px;
+        width: 1600px;
+        height: 900px;
+        background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(160, 200, 255, 0.9), rgba(160, 200, 255, 0) 70%);
+        opacity: 0;
+      }
+      #app-host,
+      #end-host {
+        position: absolute;
+        inset: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-joq4" id="root" data-composition-id="main" data-start="0" data-duration="15.2" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-6urw" class="bg" aria-hidden="true">
+        <div data-hf-id="hf-3sxc" class="bg-glow bg-glow-deep" id="bg-deep" data-layout-allow-overflow=""></div>
+        <div data-hf-id="hf-yhqq" class="bg-glow bg-glow-light" id="bg-light" data-layout-allow-overflow=""></div>
+        <div data-hf-id="hf-1ovm" class="bg-glow bg-glow-mid" id="bg-mid" data-layout-allow-overflow=""></div>
+      </div>
+
+      <!-- Frame 1: one command -->
+      <div data-hf-id="hf-2up4" id="term-glow" data-layout-allow-overflow="" class="clip" data-start="0" data-duration="2.8" data-track-index="1"></div>
+      <div data-hf-id="hf-j45s" id="terminal-host" data-composition-id="code-terminal-run" data-composition-src="compositions/components/code-terminal-run.html" data-start="0" data-duration="2.8" data-track-index="2" data-variable-values="{&quot;prompt_glyph&quot;:&quot;$&quot;,&quot;cadence&quot;:&quot;human&quot;,&quot;cues&quot;:&quot;1.55&quot;,&quot;accent&quot;:&quot;blue&quot;,&quot;exit&quot;:&quot;none&quot;}"></div>
+
+      <!-- Frame 2: the app does the work -->
+      <div data-hf-id="hf-td1k" id="app-host" data-composition-id="app-scene" data-composition-src="compositions/frames/02-app.html" data-start="2.8" data-duration="9.4" data-track-index="3"></div>
+
+      <!-- Frame 3: install it -->
+      <div data-hf-id="hf-s7h3" id="end-host" data-composition-id="end-scene" data-composition-src="compositions/frames/03-endcard.html" data-start="12.2" data-duration="3" data-track-index="4"></div>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+
+      // Backdrop: slow, finite drift so the field never reads as a still slide.
+      tl.fromTo("#bg-deep", { x: 0, y: 0 }, { x: 140, y: 60, duration: 15.2, ease: "sine.inOut" }, 0);
+      tl.fromTo("#bg-light", { x: 0, y: 0 }, { x: -180, y: -40, duration: 15.2, ease: "sine.inOut" }, 0);
+      tl.fromTo("#bg-mid", { x: 0, y: 0, scale: 1 }, { x: -90, y: 70, scale: 1.08, duration: 15.2, ease: "sine.inOut" }, 0);
+
+      // Frame 1, ambient-glow-bloom (bloom-and-hold): lands as the terminal panel settles.
+      tl.fromTo("#term-glow", { opacity: 0, scale: 0.85 }, { opacity: 0.3, scale: 1, duration: 0.6, ease: "power2.out" }, 0);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
