@@ -1,0 +1,14 @@
+# LF everywhere, so the committed dashboard/dist matches a build on any OS.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.ogg binary
+*.mp3 binary
+*.wav binary
