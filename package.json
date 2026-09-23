@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Browser-native sessions for Hermes Agent, using its authenticated native gateway.",
+  "description": "The Hermes desktop app in your browser, as a Hermes plugin.",
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "tsx --test tests/*.test.ts",
