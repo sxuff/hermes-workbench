@@ -11,10 +11,10 @@ hermes workbench
 
 The first `hermes workbench` builds the interface from your Hermes install (a few minutes, once; it needs Node, which Hermes installs for its dashboard anyway), starts the backend if needed, and opens your browser. After that it opens in seconds. When `hermes update` changes Hermes, the next `hermes workbench` refreshes the interface by itself (under a minute).
 
-Profiles: switch them in the app's own profile rail, or open one directly with `hermes workbench --profile work`. The plugin only needs installing once, in your default profile.
+Profiles: switch them in the app's own profile rail, or open one directly with `hermes workbench open work`. The plugin only needs installing once, in your default profile.
 
 ```sh
-hermes workbench --profile work   # open straight into a profile
+hermes workbench open work       # open straight into the `work` profile
 hermes workbench status           # backend up? which interface?
 hermes workbench stop             # stop the backend, only if `workbench` started it
 hermes workbench build            # rebuild the interface by hand
@@ -65,7 +65,7 @@ hermes workbench
 
 A dashboard that was running before the plugin was installed doesn't serve it yet (plugins are discovered at startup). `hermes workbench` restarts a backend it started itself, and asks before restarting one you started.
 
-The dashboard is one machine-level server that loads UI plugins from the default Hermes home, while CLI commands load per profile. `hermes workbench --profile NAME` covers other profiles from the default one; installing into a profile (`node scripts/install.mjs --hermes-home <profile home>`) is only needed for `hermes -p NAME workbench`.
+The dashboard is one machine-level server that loads UI plugins from the default Hermes home, while CLI commands load per profile. `hermes workbench open NAME` covers other profiles from the default one; installing into a profile (`node scripts/install.mjs --hermes-home <profile home>`) is only needed for `hermes -p NAME workbench`.
 
 ## Verified on the installed runtime
 

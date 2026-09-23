@@ -60,14 +60,14 @@ def setup_parser(parser) -> None:
         if action == "open":
             sub.add_argument("--no-browser", action="store_true", dest="workbench_no_browser",
                              help="Only print the URL (for SSH sessions)")
-            sub.add_argument("--profile", default=None, dest="workbench_profile",
-                             help="Open this Hermes profile (default: the current one)")
+            # Positional, because Hermes itself claims --profile/-p anywhere on the command line.
+            sub.add_argument("workbench_profile", nargs="?", default=None, metavar="PROFILE",
+                             help="Open straight into this Hermes profile (default: the current one)")
         if action == "status":
             sub.add_argument("--json", action="store_true", dest="workbench_json")
     # `hermes workbench --port N` without a subcommand means `open --port N`.
     parser.add_argument("--port", type=int, default=None, dest="workbench_port_top", help=argparse.SUPPRESS)
     parser.add_argument("--no-browser", action="store_true", dest="workbench_no_browser_top", help=argparse.SUPPRESS)
-    parser.add_argument("--profile", default=None, dest="workbench_profile_top", help=argparse.SUPPRESS)
 
 
 def hermes_home() -> Path:
@@ -549,7 +549,7 @@ def run(args) -> int:
         raise WorkbenchError("port must be between 1 and 65535")
     if action == "open":
         return cmd_open(port, bool(getattr(args, "workbench_no_browser", False) or getattr(args, "workbench_no_browser_top", False)),
-                        getattr(args, "workbench_profile", None) or getattr(args, "workbench_profile_top", None))
+                        getattr(args, "workbench_profile", None))
     if action == "build":
         return cmd_build(port)
     if action == "status":
