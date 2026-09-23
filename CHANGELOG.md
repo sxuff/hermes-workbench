@@ -2,6 +2,12 @@
 
 All notable changes to Hermes Workbench are documented here.
 
+## 0.2.1 - 2026-09-23
+
+### Docs
+
+- The README installs from the Hermes plugin catalog (`hermes plugins install hermes-workbench --enable`). Installing straight from GitHub needs `--force`, because Hermes's install scanner asks for confirmation on sources outside the catalog; the README explains the expected findings.
+
 ## 0.2.0 - 2026-09-23
 
 First tagged release.
@@ -29,7 +35,7 @@ First tagged release.
 
 ### Publishing
 
-- Installs from GitHub with `hermes plugins install sxuff/hermes-workbench --enable`.
+- Installs from GitHub with `hermes plugins install sxuff/hermes-workbench`.
 - A catalog banner, README hero and screenshots, made from real Hermes runs against a scripted model (`demo/`).
 - MIT license file, CI, `CONTRIBUTING.md` and `SECURITY.md`.
 

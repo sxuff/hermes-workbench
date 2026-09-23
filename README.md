@@ -13,9 +13,11 @@ The Hermes desktop app, in your browser. `hermes workbench` opens the desktop ap
 ## Get started
 
 ```sh
-hermes plugins install sxuff/hermes-workbench --enable
+hermes plugins install hermes-workbench --enable
 hermes workbench
 ```
+
+That installs the reviewed release from the Hermes plugin catalog. To install straight from GitHub instead, add `--force`: Hermes's install scanner asks for confirmation on sources outside the catalog. The findings it prints are expected (the plugin runs npm and Vite for its build and starts the dashboard, and its code handles the gateway's sudo prompt events), but read them first.
 
 The first `hermes workbench` builds the interface from your Hermes install (a few minutes, once), starts the backend if needed, and opens your browser at `http://127.0.0.1:9119/workbench`. After that it opens in seconds. When `hermes update` changes Hermes, the next `hermes workbench` rebuilds the interface by itself (under a minute).
 
