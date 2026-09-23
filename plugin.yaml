@@ -1,6 +1,6 @@
 name: hermes-workbench
 version: 0.2.0
-manifest_version: 2
+manifest_version: 1
 api_version: 1
 requires_hermes: ">=0.21"
 description: >-
