@@ -128,7 +128,8 @@
     getBootProgress: function () { return Promise.resolve({ phase: 'ready', percent: 100 }); },
     api: api,
     getVersion: function () {
-      return Promise.resolve({ appVersion: 'web', electronVersion: '', nodeVersion: '', platform: navigator.platform || 'web', hermesRoot: '' });
+      // Empty appVersion: the status bar hides the desktop-client version item instead of showing "vweb".
+      return Promise.resolve({ appVersion: '', electronVersion: '', nodeVersion: '', platform: navigator.platform || 'web', hermesRoot: '' });
     },
     // In-app updates swap the Electron app; in the browser, update Hermes with `hermes update`.
     updates: {
@@ -183,7 +184,8 @@
     setKeepAwake: asyncNoop, setPreviewShortcutActive: noop,
     fetchLinkTitle: function () { return Promise.resolve(null); },
     resolveFavicon: function () { return Promise.resolve(null); },
-    sanitizeWorkspaceCwd: function (cwd) { return Promise.resolve(cwd); },
+    // Same shape as Electron's: the browser can't check the backend's disk, so the path passes through.
+    sanitizeWorkspaceCwd: function (cwd) { return Promise.resolve({ cwd: typeof cwd === 'string' ? cwd.trim() : '', sanitized: false }); },
     readPluginSource: function () { return Promise.resolve(null); },
 
     settings: {
