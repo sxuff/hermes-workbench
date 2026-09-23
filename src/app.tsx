@@ -1,170 +1,272 @@
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
-import { WorkbenchClient, type ServerRequest, type ApprovalDecision, type NativeMessage } from './client';
-import { initialWorkbenchState, workbenchReducer, type ToolState, type WorkbenchState } from './state';
+import { WorkbenchClient } from './client';
+import { initialWorkbenchState, workbenchReducer, type WorkbenchState } from './state';
+import { SDK, React, useState, useEffect, useReducer, useRef, text, errorText, readPref, readText, writePref } from './sdk';
+import { Icon } from './ui/icons';
+import { Transcript } from './ui/transcript';
+import { RequestCard } from './ui/requests';
+import { Composer, type SendMode } from './ui/composer';
+import { Sidebar, type SidebarSession } from './ui/sidebar';
+import { SidePanel, type PanelTab } from './ui/panel';
 
-const SDK = (window as any).__HERMES_PLUGIN_SDK__;
-const React = SDK.React;
-const { useState, useEffect, useMemo, useReducer, useRef } = React;
-const text = (v: unknown): string => typeof v === 'string' ? v : '';
-const pretty = (v: unknown): string => typeof v === 'string' ? v : v == null ? '' : JSON.stringify(v, null, 2);
-const obj = (v: unknown): Record<string, any> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : {};
+type ThemeMode = 'auto' | 'light' | 'dark';
+const THEME_MODES = ['auto', 'light', 'dark'] as const;
 
-function Icon({ name = 'spark' }: { name?: string }) {
-  const paths: Record<string, string> = {
-    spark: 'M12 3l2.7 6.3L21 12l-6.3 2.7L12 21l-2.7-6.3L3 12l6.3-2.7L12 3z',
-    plus: 'M12 5v14M5 12h14', search: 'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',
-    chat: 'M21 11a9 9 0 0 1-9 9H3l2-5a9 9 0 1 1 16-4z',
-    folder: 'M3 7V4h6l3 3h9v13H3V7z', menu: 'M4 6h16M4 12h16M4 18h16',
-    arrow: 'M12 19V5M5 12l7-7 7 7', close: 'M6 6l12 12M6 18L18 6',
-    agents: 'M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M2 21v-3a6 6 0 0 1 12 0v3M16 4a4 4 0 0 1 0 8M18 15a5 5 0 0 1 4 5',
-    expand: 'M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5',
-  };
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name] || paths.spark}/></svg>;
-}
-function Markdown({ value }: { value: string }) {
-  const html = useMemo(() => DOMPurify.sanitize(marked.parse(value, { async: false, gfm: true }) as string, {
-    USE_PROFILES: { html: true }, FORBID_TAGS: ['img', 'style', 'iframe', 'form', 'input', 'button'], FORBID_ATTR: ['style'],
-  }), [value]);
-  return <div className="hwb-prose" dangerouslySetInnerHTML={{ __html: html }}/>;
-}
-function ToolCard({ tool }: { tool: ToolState }) {
-  return <details className="hwb-tool"><summary><span className={`hwb-dot ${tool.status === 'complete' ? 'completed' : 'running'}`}/><span className="hwb-tool-name">{tool.name}</span><span>{tool.status}</span></summary><div className="hwb-tool-body">
-    {tool.context && <p>{tool.context}</p>}
-    {tool.args != null && <section><span className="hwb-eyebrow">Arguments</span><pre>{pretty(tool.args)}</pre></section>}
-    {(tool.result != null || tool.summary) && <section><span className="hwb-eyebrow">Result</span><pre>{pretty(tool.result ?? tool.summary)}</pre></section>}
-  </div></details>;
-}
-function Message({ message }: { message: NativeMessage }) {
-  if (message.role === 'tool') return <details className="hwb-tool"><summary><span className="hwb-tool-name">{message.name || 'Tool result'}</span></summary><div className="hwb-tool-body"><pre>{message.text || pretty(message.content)}</pre></div></details>;
-  return <article className={`hwb-message ${message.role}`}><div className="hwb-message-head"><span className={`hwb-avatar ${message.role}`}>{message.role === 'assistant' ? 'H' : message.role === 'user' ? 'Y' : 'S'}</span><strong>{message.role === 'assistant' ? 'Hermes' : message.role === 'user' ? 'You' : 'System'}</strong>{message.delivery && <span>{message.delivery}</span>}{message.mode && message.mode !== 'submit' ? <span className="hwb-tag">{text(message.mode)}</span> : null}</div>
-    {text(message.reasoning) && <details className="hwb-reasoning"><summary>Reasoning</summary><Markdown value={text(message.reasoning)}/></details>}
-    <div className="hwb-message-content"><Markdown value={message.text || text(message.content)}/></div>
-  </article>;
-}
-function RequestCard({ request, client, enabled }: { request: ServerRequest; client: WorkbenchClient; enabled: boolean }) {
-  const [answer, setAnswer] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [answered, setAnswered] = useState([] as string[]);
-  const p = request.payload;
-  const isApproval = request.type === 'approval.request';
-  const isClarify = request.type === 'clarify.request';
-  const questions = Array.isArray(p.questions) ? p.questions.map(obj) : [];
-  const question = questions.find((q: any) => !answered.includes(String(q.qid ?? q.id ?? q.question_id)));
-  const questionId = question ? String(question.qid ?? question.id ?? question.question_id ?? '') : undefined;
-  const options = (question?.choices ?? question?.options ?? p.choices ?? p.options);
-  const choices: ApprovalDecision[] = Array.isArray(p.choices) ? p.choices as ApprovalDecision[] : p.smart_denied || p.allow_session === false ? ['once', 'deny'] : p.allow_permanent === false ? ['once', 'session', 'deny'] : ['once', 'session', 'always', 'deny'];
-  async function respond(choice?: ApprovalDecision) {
-    if (busy || !enabled) return;
-    setBusy(true); setError('');
-    try {
-      if (choice) await client.respondApproval(request.session_id, request.request_id, choice);
-      else { await client.respondClarification(request.session_id, request.request_id, answer, questionId || undefined); if (questionId) setAnswered((a: string[]) => [...a, questionId]); setAnswer(''); }
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
-  }
-  return <section className="hwb-tool" aria-label={isApproval ? 'Approval required' : 'Input required'}><div className="hwb-tool-body"><span className="hwb-eyebrow">{isApproval ? 'Approval required' : isClarify ? 'Clarification needed' : 'Secure input required'}</span>
-    <p>{text(question?.question ?? question?.text ?? p.question ?? p.description ?? p.message) || request.type}</p>
-    {isApproval && <pre>{pretty(p.command ?? p.tool ?? p)}</pre>}
-    {!isApproval && !isClarify && <p>This secure prompt cannot be answered in Workbench. Use the native secure interface. No credentials are collected here.</p>}
-    {isClarify && <><div className="hwb-options">{Array.isArray(options) && options.map((option: unknown, i: number) => { const o = obj(option); const value = typeof option === 'string' ? option : text(o.value ?? o.label ?? o.text); return <button type="button" className="hwb-option" key={i} aria-pressed={answer === value} disabled={!enabled || busy} onClick={() => setAnswer(value)}>{value}</button>; })}</div><label className="hwb-workspace">Your answer<input aria-label="Clarification answer" value={answer} disabled={!enabled || busy} onChange={(e: any) => setAnswer(e.target.value)}/></label></>}
-    <div className="hwb-modal-actions">{isApproval ? choices.filter(c => ['once', 'session', 'always', 'deny'].includes(c)).map(c => <button type="button" key={c} className={`hwb-btn ${c === 'deny' ? 'hwb-btn-danger' : ''}`} disabled={!enabled || busy} onClick={() => void respond(c)}>{{once: 'Allow once', session: 'Allow for session', always: 'Always allow', deny: 'Deny'}[c]}</button>) : isClarify ? <button type="button" className="hwb-btn hwb-btn-primary" disabled={!enabled || busy || !answer.trim()} onClick={() => void respond()}>Answer</button> : null}</div>
-    {error && <div className="hwb-modal-error" role="alert">{error}</div>}
-  </div></section>;
+/** The Workbench stands alone, so "auto" follows the OS appearance, as the desktop app does. */
+const systemDark = () => window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+
+/** Profile the page was opened for (`hermes -p work workbench` puts it in the URL). */
+function urlProfile(): string {
+  return new URLSearchParams(window.location.search).get('profile') || 'default';
 }
 
-export function Workbench() {
-  const [client] = useState(() => new WorkbenchClient(SDK));
+/**
+ * Plugins render inside the dashboard's content column, which is its own stacking
+ * context, so a fixed full-window layer would still sit under the dashboard sidebar.
+ * Raise each positioned, z-indexed ancestor while app mode is mounted; restore after.
+ */
+function useLiftAboveHost(root: { current: HTMLElement | null }) {
+  useEffect(() => {
+    const lifted: Array<[HTMLElement, string]> = [];
+    for (let el = root.current?.parentElement; el && el !== document.body; el = el.parentElement) {
+      const cs = getComputedStyle(el);
+      if (cs.position !== 'static' && cs.zIndex !== 'auto') { lifted.push([el, el.style.zIndex]); el.style.zIndex = '60'; }
+    }
+    return () => { for (const [el, z] of lifted) el.style.zIndex = z; };
+  }, []);
+}
+
+/** Link back to the regular dashboard, keeping the profile selection. */
+function dashboardHref(profile: string): string {
+  const base = window.location.pathname.replace(/\/workbench\/?$/, '') || '/';
+  return profile === 'default' ? base : `${base}${base.endsWith('/') ? '' : '/'}?profile=${encodeURIComponent(profile)}`;
+}
+
+function Wordmark() {
+  return <div className="hwb-hero"><h1 className="hwb-wordmark">Hermes Agent</h1>
+    <p>Drop an error, a goal, or a whole folder. Hermes picks it up from here.</p></div>;
+}
+
+function InlineTitle({ title, editable, onRename }: { title: string; editable: boolean; onRename(title: string): void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(title);
+  useEffect(() => { if (!editing) setValue(title); }, [title, editing]);
+  if (!editing) return <button type="button" className="hwb-title" disabled={!editable} onClick={() => setEditing(true)}><span>{title}</span>{editable && <Icon name="pencil" className="hwb-title-edit"/>}</button>;
+  const commit = () => { setEditing(false); if (value.trim() && value.trim() !== title) onRename(value.trim()); };
+  return <input className="hwb-title-input" autoFocus aria-label="Session title" value={value} onChange={(e: any) => setValue(e.target.value)} onBlur={commit}
+    onKeyDown={(e: any) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setValue(title); setEditing(false); } }}/>;
+}
+
+export function Workbench({ profile }: { profile: string }) {
+  const [client] = useState(() => new WorkbenchClient(SDK, { profile }));
   const [state, dispatch] = useReducer(workbenchReducer, initialWorkbenchState) as [WorkbenchState, (a: any) => void];
   const [search, setSearch] = useState('');
-  const [cwd, setCwd] = useState('/opt/data');
+  const [cwd, setCwd] = useState(() => readText('cwd'));
   const [drafts, setDrafts] = useState({} as Record<string, string>);
-  const [mode, setMode] = useState('submit');
+  const [mode, setMode] = useState('submit' as SendMode);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [error, setError] = useState('');
-  const [sidebar, setSidebar] = useState(false);
-  const [roster, setRoster] = useState(false);
+  const [drawer, setDrawer] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(() => readPref('sidebar', 'shown', ['shown', 'hidden'] as const) === 'hidden');
+  const [panel, setPanel] = useState(null as PanelTab | null);
+  const [themeMode, setThemeMode] = useState(() => readPref('theme', 'auto', THEME_MODES) as ThemeMode);
+  const [dark, setDark] = useState(systemDark);
   const [expanded, setExpanded] = useState(false);
-  const root = useRef(null as HTMLDivElement | null);
-  useEffect(() => {
-    const changed = () => setExpanded(document.fullscreenElement === root.current);
-    document.addEventListener('fullscreenchange', changed);
-    return () => document.removeEventListener('fullscreenchange', changed);
-  }, []);
-  const toggleExpanded = async () => {
-    try { if (document.fullscreenElement) await document.exitFullscreen(); else await root.current?.requestFullscreen(); }
-    catch { setError('Fullscreen is unavailable in this browser. The embedded Workbench remains usable.'); }
-  };
   const [follow, setFollow] = useState(true);
+  const root = useRef(null as HTMLDivElement | null);
   const scroller = useRef(null as HTMLDivElement | null);
+  useLiftAboveHost(root);
+
   const id = state.activeSessionId;
   const thread = id ? state.threads[id] : undefined;
   const connected = state.connection === 'open';
   const controlled = connected && thread?.ownership === 'owned';
   const draft = drafts[id || 'new'] || '';
   const setDraft = (value: string) => setDrafts((old: Record<string, string>) => ({ ...old, [id || 'new']: value }));
-  const run = async (operation: () => Promise<unknown>) => {
-    if (busyRef.current) return;
-    busyRef.current = true; setBusy(true); setError('');
-    try { await operation(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { busyRef.current = false; setBusy(false); }
-  };
+  const isDark = themeMode === 'auto' ? dark : themeMode === 'dark';
+
+  useEffect(() => {
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+    const update = () => setDark(systemDark());
+    media?.addEventListener('change', update);
+    return () => media?.removeEventListener('change', update);
+  }, []);
+  useEffect(() => {
+    const changed = () => setExpanded(document.fullscreenElement === root.current);
+    document.addEventListener('fullscreenchange', changed);
+    return () => document.removeEventListener('fullscreenchange', changed);
+  }, []);
   useEffect(() => {
     let alive = true;
     const unsub = client.subscribe(dispatch);
     void client.connect().then(() => client.listSessions()).catch((e: Error) => { if (alive) setError(e.message); });
     return () => { alive = false; unsub(); client.disconnect(); };
   }, [client]);
-  useEffect(() => { if (follow && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight; }, [thread?.messages.length, thread?.streamingText, thread?.tools, thread?.requests, follow, id]);
+  useEffect(() => { if (follow && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight; },
+    [thread?.messages, thread?.streamingText, thread?.reasoningText, thread?.requests, follow, id]);
   useEffect(() => { setFollow(true); setMode('submit'); }, [id]);
-  useEffect(() => { if (roster && controlled && id) void client.listAgents(id).catch((e: Error) => setError(e.message)); }, [roster, controlled, id]);
-  const create = () => run(async () => { await client.createSession({ title: 'New session', cwd: cwd.trim() || '/opt/data' }); setSidebar(false); await client.listSessions(); });
+  useEffect(() => { if (!thread?.running) setMode('submit'); }, [thread?.running]);
+  useEffect(() => { if (panel === 'agents' && controlled && id) void client.listAgents(id).catch((e: Error) => setError(e.message)); }, [panel, controlled, id]);
+
+  const run = async (operation: () => Promise<unknown>) => {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true); setError('');
+    try { await operation(); } catch (e) { setError(errorText(e)); }
+    finally { busyRef.current = false; setBusy(false); }
+  };
+  const toggleExpanded = async () => {
+    try { if (document.fullscreenElement) await document.exitFullscreen(); else await root.current?.requestFullscreen(); }
+    catch { setError('Fullscreen is unavailable in this browser.'); }
+  };
+  const create = () => run(async () => {
+    await client.createSession({ title: 'New session', ...(cwd.trim() ? { cwd: cwd.trim() } : {}) });
+    setDrawer(false); await client.listSessions();
+  });
   const open = (storedId: string) => run(async () => {
     const bound = Object.values(state.threads).find(t => t.session.stored_session_id === storedId || t.session.session_id === storedId);
     if (bound?.ownership === 'owned') client.setActiveSession(bound.session.session_id);
     else await client.resumeSession(storedId);
-    setSidebar(false);
+    setDrawer(false);
   });
   const send = () => {
-    if (!id || !controlled || !draft.trim() || (thread?.running && mode === 'submit')) return;
+    if (!draft.trim()) return;
+    if (!thread) {
+      // As in the desktop, typing on the empty screen starts a session.
+      const content = draft;
+      void run(async () => {
+        const session = await client.createSession({ title: 'New session', ...(cwd.trim() ? { cwd: cwd.trim() } : {}) });
+        setDrafts((old: Record<string, string>) => ({ ...old, new: '' }));
+        await client.submit(session.session_id, content);
+        await client.listSessions();
+      });
+      return;
+    }
+    if (!id || !controlled) return;
+    const effective: SendMode = thread?.running ? (mode === 'submit' ? 'queue' : mode) : 'submit';
     const content = draft, key = id;
-    void run(async () => { await client[mode as 'submit' | 'queue' | 'steer'](key, content); setDrafts((old: Record<string, string>) => old[key] === content ? { ...old, [key]: '' } : old); });
+    setFollow(true);
+    void run(async () => { await client[effective](key, content); setDrafts((old: Record<string, string>) => old[key] === content ? { ...old, [key]: '' } : old); });
   };
-  const sessionMap = new Map(state.sessions.map(s => [s.id, s]));
-  Object.values(state.threads).forEach(t => { const key = t.session.stored_session_id || t.session.session_id; sessionMap.set(key, { ...sessionMap.get(key), id: key, title: t.session.title || sessionMap.get(key)?.title || 'New session', message_count: t.messages.length }); });
-  const sessions = [...sessionMap.values()].filter(s => `${s.title || ''} ${s.preview || ''} ${s.id}`.toLowerCase().includes(search.toLowerCase()));
+  const setTheme = (next: ThemeMode) => { setThemeMode(next); writePref('theme', next); if (next === 'auto') setDark(systemDark()); };
+  const toggleSidebar = () => {
+    if (window.matchMedia('(max-width: 860px)').matches) { setDrawer(!drawer); return; }
+    const next = !sidebarHidden; setSidebarHidden(next); writePref('sidebar', next ? 'hidden' : 'shown');
+  };
+  const updateCwd = (value: string) => { setCwd(value); writePref('cwd', value); };
+
+  const sessionMap = new Map<string, SidebarSession>(state.sessions.map(s => [s.id, s]));
+  Object.values(state.threads).forEach(t => {
+    const key = t.session.stored_session_id || t.session.session_id;
+    const known = sessionMap.get(key);
+    sessionMap.set(key, { ...known, id: key, source: known?.source || 'dashboard', title: t.session.title || known?.title || 'New session', live: true, running: t.running });
+  });
+  const query = search.trim().toLowerCase();
+  const sessions = [...sessionMap.values()].filter(s => !query || `${s.title || ''} ${s.preview || ''} ${s.id}`.toLowerCase().includes(query));
+  const activeStored = thread?.session.stored_session_id || null;
   const displayError = error || thread?.error || state.error;
-  return <div ref={root} className={`hwb ${expanded ? 'hwb-expanded' : ''}`}>
-    <header className="hwb-topbar"><button className="hwb-icon-btn hwb-mobile-only" aria-label="Toggle sessions" onClick={() => setSidebar(!sidebar)}><Icon name="menu"/></button><div className="hwb-brand"><strong>Hermes<br/>Agent</strong><small>Workbench</small></div><span className="hwb-title">{thread?.session.title || 'Your agent workspace'}</span><span className="hwb-connection" role="status"><span className={`hwb-dot ${connected ? 'connected' : state.connection === 'connecting' ? 'connecting' : 'disconnected'}`}/>{connected ? 'Connected' : state.connection}</span><button className="hwb-icon-btn" aria-label={expanded ? 'Exit expanded view' : 'Expand workbench'} onClick={() => void toggleExpanded()}><Icon name={expanded ? 'close' : 'expand'}/></button></header>
-    <div className="hwb-body">
-      {sidebar && <button className="hwb-drawer-backdrop sessions" aria-label="Close sessions" onClick={() => setSidebar(false)}/>}
-      <aside className={`hwb-sidebar ${sidebar ? 'is-open' : ''}`} aria-label="Sessions"><div className="hwb-sidebar-head"><button className="hwb-btn" disabled={!connected || busy} onClick={create}>New session<Icon name="plus"/></button><div className="hwb-search"><Icon name="search"/><input aria-label="Search sessions" placeholder="Search sessions…" value={search} onChange={(e: any) => setSearch(e.target.value)}/></div></div>
-        <div className="hwb-session-list"><div className="hwb-list-label"><span className="hwb-eyebrow">Sessions</span><button className="hwb-btn hwb-btn-quiet" disabled={!connected || busy} onClick={() => void run(() => client.listSessions())}>Refresh</button></div>{sessions.map(s => <button className="hwb-session" key={s.id} aria-current={thread?.session.stored_session_id === s.id || id === s.id ? 'true' : undefined} disabled={!connected || busy} onClick={() => void open(s.id)}><Icon name="chat"/><div className="hwb-session-copy"><div className="hwb-session-title">{s.title || s.preview || 'Untitled session'}</div><div className="hwb-session-meta"><span>{s.message_count ?? 0} messages</span><span>{s.source || 'Hermes'}</span></div></div></button>)}{!sessions.length && <p className="hwb-small-empty">{search ? 'No matching sessions.' : 'No sessions loaded. Create a session to begin.'}</p>}</div>
-        <div className="hwb-sidebar-foot"><label className="hwb-eyebrow" htmlFor="hwb-cwd">Workspace for new sessions</label><input id="hwb-cwd" aria-label="Workspace directory" value={cwd} onChange={(e: any) => setCwd(e.target.value)} spellCheck={false}/><div className="hwb-profile"><span className="hwb-profile-badge">H</span><span>Default profile · native gateway</span></div></div>
-      </aside>
-      <main className="hwb-main"><div className="hwb-threadbar"><div className="hwb-thread-meta"><span className="hwb-tag">{thread ? thread.running ? 'Working' : thread.status || 'Ready' : 'No session'}</span><span title={text(thread?.session.info?.cwd)}>{text(thread?.session.info?.model) || 'Configured model'}</span></div><div className="hwb-thread-actions">{thread && <><button className="hwb-btn hwb-btn-quiet" disabled={!controlled || busy} onClick={() => { const title = window.prompt('Session title', thread.session.title || ''); if (title?.trim() && id) void run(() => client.rename(id, title.trim())); }}>Rename</button><button className="hwb-btn hwb-btn-quiet" disabled={!controlled || busy || thread.running} onClick={() => id && void run(() => client.fork(id))}>Fork</button></>}<button className="hwb-btn" aria-pressed={roster} onClick={() => setRoster(!roster)}><Icon name="agents"/>Agents{thread?.agents.length ? ` (${thread.agents.length})` : ''}</button></div></div>
-        {!connected && <div className="hwb-banner"><span>Gateway {state.connection}. Sending is disabled until the connection and session binding are restored.</span><button className="hwb-btn" disabled={busy || state.connection === 'connecting'} onClick={() => void run(async () => { await client.connect(); await client.listSessions(); })}>Reconnect</button></div>}
-        {thread && connected && !controlled && <div className="hwb-banner"><span>Control is not verified. Resume this session explicitly before sending.</span><button className="hwb-btn" disabled={busy} onClick={() => void open(thread.session.stored_session_id)}>Resume</button></div>}
-        {displayError && <div className="hwb-banner error" role="alert"><span>{displayError}</span><button className="hwb-btn" onClick={() => { setError(''); dispatch({ type: 'error', error: null }); if (id) dispatch({ type: 'error', error: null, sessionId: id }); }}>Dismiss</button></div>}
-        <div className="hwb-transcript" ref={scroller} onScroll={() => { const el = scroller.current; if (el) setFollow(el.scrollHeight - el.scrollTop - el.clientHeight < 100); }}><div className="hwb-thread-inner">
-          {!thread ? <div className="hwb-empty"><span className="hwb-eyebrow">Hermes Workbench</span><h1>What should we work on?</h1><p>Your Hermes sessions, tools, and agents. Start a session or pick up where you left off.</p><button className="hwb-btn hwb-btn-primary" disabled={!connected || busy} onClick={create}><Icon name="plus"/>Create a session</button><div className="hwb-empty-note"><Icon name="folder"/><span>New sessions run in the workspace selected on the left. Existing sessions are never taken over automatically.</span></div></div> : <>
-            {!thread.messages.length && !thread.running && <div className="hwb-small-empty">Session ready. Give Hermes a task below.</div>}
-            {thread.messages.map((m, i) => <Message key={m.client_id || m.row_id || i} message={m}/>)}
-            {Object.values(thread.tools).map(t => <ToolCard key={t.tool_id} tool={t}/>)}
-            {thread.reasoningText && <details className="hwb-reasoning"><summary>Reasoning</summary><Markdown value={thread.reasoningText}/></details>}
-            {thread.streamingText && <Message message={{ role: 'assistant', text: thread.streamingText }}/>}
-            {thread.running && <div className="hwb-live-label" role="status"><span className="hwb-dot running"/>{thread.status || 'Hermes is working'}</div>}
-            {thread.requests.map(r => <RequestCard key={`${id}:${r.request_id}`} request={r} client={client} enabled={!!controlled}/>)}
-          </>}
-        </div></div>
-        {!follow && <button className="hwb-btn hwb-jump" onClick={() => setFollow(true)}>Jump to latest ↓</button>}
-        <div className="hwb-composer-wrap">{thread?.queued != null && <div className="hwb-queue"><div className="hwb-queue-item"><span>{pretty(thread.queued)}</span><small>Gateway queue</small></div></div>}<form className="hwb-composer" onSubmit={(e: any) => { e.preventDefault(); send(); }}><textarea aria-label="Message Hermes" placeholder={!thread ? 'Create or resume a session to begin' : thread.running ? 'Queue a follow-up or steer the current task…' : 'What should we work on?'} disabled={!controlled} value={draft} onChange={(e: any) => setDraft(e.target.value)} onKeyDown={(e: any) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}/><div className="hwb-composer-bottom"><div className="hwb-compose-mode"><select aria-label="Message mode" value={mode} onChange={(e: any) => setMode(e.target.value)} disabled={!controlled || busy}><option value="submit">Send message</option><option value="queue">Queue follow-up</option><option value="steer">Steer current task</option></select></div><div className="hwb-compose-actions">{thread?.running && <button type="button" className="hwb-btn hwb-btn-danger" disabled={!controlled} onClick={() => { if (id) void client.stop(id).catch((e: Error) => setError(e.message)); }}>Stop</button>}<button type="submit" className="hwb-btn hwb-btn-primary" disabled={!controlled || busy || !draft.trim() || (!!thread?.running && mode === 'submit')}><Icon name="arrow"/>{busy ? 'Sending…' : mode === 'queue' ? 'Queue' : mode === 'steer' ? 'Steer' : 'Send'}</button></div></div></form><div className="hwb-composer-hint"><span><kbd>Enter</kbd> send · <kbd>Shift Enter</kbd> new line</span><span>{thread?.running && mode === 'submit' ? 'Choose Queue or Steer while Hermes is working.' : 'Approvals stay in your hands.'}</span></div></div>
-      </main>
-      {roster && <><button className="hwb-drawer-backdrop roster" aria-label="Close agents" onClick={() => setRoster(false)}/><aside className="hwb-roster" aria-label="Subagents"><div className="hwb-roster-head"><span className="hwb-eyebrow">Subagents</span><button className="hwb-icon-btn" aria-label="Close agents" onClick={() => setRoster(false)}><Icon name="close"/></button></div><div className="hwb-roster-list"><button className="hwb-btn" disabled={!controlled || busy} onClick={() => id && void run(() => client.listAgents(id))}>Refresh agents</button>{!thread?.agents.length && <p className="hwb-small-empty">No delegated agents in this session.</p>}{thread?.agents.map(a => <section className="hwb-agent" key={a.subagent_id}><div className="hwb-agent-heading"><span className={`hwb-dot ${a.status === 'running' ? 'running' : 'completed'}`}/><span title={a.subagent_id}>{text(a.name) || a.subagent_id}</span></div><p>{a.goal || text(a.task) || 'Delegated task'}</p><div className="hwb-agent-meta">{a.status || 'Unknown'}{a.model ? ` · ${a.model}` : ''}</div><div className="hwb-agent-controls"><button className="hwb-btn" disabled={!controlled || busy || a.status !== 'running'} onClick={() => { const value = window.prompt('Steer this agent'); if (value?.trim() && id) void run(() => client.steerAgent(id, a.subagent_id, value)); }}>Steer</button><button className="hwb-btn hwb-btn-danger" disabled={!controlled || busy || a.status !== 'running'} onClick={() => id && void run(() => client.stopAgent(id, a.subagent_id))}>Stop</button></div></section>)}</div><div className="hwb-roster-foot">Only agents verified as belonging to this session can be controlled. Refresh queries live delegation status.</div></aside></>}
+  const model = text(thread?.session.info?.model);
+  const sessionCwd = text(thread?.session.info?.cwd);
+  const clearError = () => { setError(''); dispatch({ type: 'error', error: null }); if (id) dispatch({ type: 'error', error: null, sessionId: id }); };
+  const placeholder = !thread ? "What's on your mind?" : !controlled ? 'Resume this session to send' : thread.running ? 'Queue a follow-up or steer the current task…' : "What's on your mind?";
+
+  // App mode: the Workbench owns the whole window, as a standalone app would.
+  return <div className="hwb-host">
+    <div ref={root} data-theme={isDark ? 'dark' : 'light'}
+      className={`hwb is-app ${expanded ? 'is-expanded' : ''} ${sidebarHidden ? 'is-sidebar-hidden' : ''} ${drawer ? 'is-drawer-open' : ''} ${panel ? 'has-panel' : ''}`}>
+      <div className="hwb-frame">
+        {drawer && <button type="button" className="hwb-backdrop" aria-label="Close sessions" onClick={() => setDrawer(false)}/>}
+        <aside className="hwb-sidebar">
+          <Sidebar sessions={sessions} activeId={activeStored} search={search} onSearch={setSearch} onOpen={id => void open(id)} onCreate={() => void create()}
+            onRefresh={() => void run(() => client.listSessions())} cwd={cwd} onCwd={updateCwd} connected={connected} busy={busy}/>
+        </aside>
+        <main className="hwb-main">
+          <header className="hwb-header">
+            <button type="button" className="hwb-icon-btn" aria-label="Toggle sessions sidebar" onClick={toggleSidebar}><Icon name="sidebar"/></button>
+            {thread && <InlineTitle title={thread.session.title || text(thread.session.info?.title) || (activeStored && sessionMap.get(activeStored)?.title) || 'New session'} editable={!!controlled && !busy} onRename={title => id && void run(() => client.rename(id, title))}/>}
+            <div className="hwb-header-actions">
+              {thread && <button type="button" className="hwb-icon-btn" aria-label="Fork session" disabled={!controlled || busy || thread.running} onClick={() => id && void run(() => client.fork(id))}><Icon name="fork"/></button>}
+              <button type="button" className="hwb-icon-btn" aria-label={expanded ? 'Exit full screen' : 'Full screen'} onClick={() => void toggleExpanded()}><Icon name={expanded ? 'minimize' : 'maximize'}/></button>
+              <button type="button" className="hwb-icon-btn" aria-label="Toggle details panel" aria-pressed={!!panel} onClick={() => setPanel(panel ? null : 'todos')}><Icon name="sidebarRight"/></button>
+            </div>
+          </header>
+          {!connected && <div className="hwb-banner"><Icon name="alert"/><span>Gateway {state.connection}. Sending is paused until the connection is restored.</span>
+            <button type="button" className="hwb-btn hwb-btn-text-strong" disabled={busy || state.connection === 'connecting'} onClick={() => void run(async () => { await client.connect(); await client.listSessions(); })}>Reconnect</button></div>}
+          {thread && connected && !controlled && <div className="hwb-banner"><Icon name="alert"/><span>This session isn't attached to Workbench yet.</span>
+            <button type="button" className="hwb-btn hwb-btn-text-strong" disabled={busy} onClick={() => void open(thread.session.stored_session_id)}>Resume</button></div>}
+          {displayError && <div className="hwb-banner is-error" role="alert"><Icon name="alert"/><span>{displayError}</span>
+            <button type="button" className="hwb-icon-btn hwb-xs" aria-label="Dismiss" onClick={clearError}><Icon name="x"/></button></div>}
+          <div className="hwb-thread" ref={scroller} onScroll={() => { const el = scroller.current; if (el) setFollow(el.scrollHeight - el.scrollTop - el.clientHeight < 120); }}>
+            <div className="hwb-thread-inner">
+              {!thread ? <div className="hwb-empty"><Wordmark/></div>
+              : <>
+                  {!thread.messages.length && !thread.running && <div className="hwb-empty is-compact"><Wordmark/></div>}
+                  <Transcript thread={thread}/>
+                  {thread.requests.map(r => <RequestCard key={`${id}:${r.request_id}`} request={r} client={client} enabled={!!controlled}/>)}
+                </>}
+            </div>
+          </div>
+          {!follow && <button type="button" className="hwb-jump" aria-label="Jump to latest" onClick={() => setFollow(true)}><Icon name="arrowDown"/></button>}
+          <Composer value={draft} onChange={setDraft} onSend={send} onStop={() => { if (id) void client.stop(id).catch((e: Error) => setError(e.message)); }}
+            mode={mode} onMode={setMode} enabled={thread ? !!controlled : connected} busy={busy} running={!!thread?.running} queued={thread?.queued} placeholder={placeholder}/>
+        </main>
+        {panel && thread && <SidePanel tab={panel} onTab={setPanel} onClose={() => setPanel(null)} todos={thread.todos} agents={thread.agents} controllable={!!controlled}
+          onRefreshAgents={() => id && void run(() => client.listAgents(id))}
+          onSteerAgent={async (agentId, value) => { if (id) await run(() => client.steerAgent(id, agentId, value)); }}
+          onStopAgent={agentId => id && void run(() => client.stopAgent(id, agentId))}/>}
+      </div>
+      <footer className="hwb-statusbar">
+        <span className="hwb-status-item"><span className={`hwb-bullet ${connected ? 'is-live' : state.connection === 'connecting' ? 'is-running' : 'is-failed'}`}/>{connected ? 'Gateway ready' : `Gateway ${state.connection}`}</span>
+        <a className="hwb-status-item" href={dashboardHref(profile)}><Icon name="settings"/>Dashboard</a>
+        {thread && <button type="button" className="hwb-status-item" onClick={() => setPanel(panel === 'agents' ? null : 'agents')}><Icon name="robot"/>Agents{thread.agents.length ? ` ${thread.agents.length}` : ''}</button>}
+        {thread && <button type="button" className="hwb-status-item" onClick={() => setPanel(panel === 'todos' ? null : 'todos')}><Icon name="listCheck"/>Todos{thread.todos.length ? ` ${thread.todos.filter(t => /done|complete/.test(text(t.status))).length}/${thread.todos.length}` : ''}</button>}
+        <span className="hwb-push"/>
+        {profile !== 'default' && <span className="hwb-status-item">Profile {profile}</span>}
+        {sessionCwd && <span className="hwb-status-item hwb-mono hwb-truncate">{sessionCwd}</span>}
+        <span className="hwb-status-item">{model || 'Default model'}</span>
+        <button type="button" className="hwb-status-item" aria-label={`Theme: ${themeMode}`} onClick={() => setTheme(themeMode === 'auto' ? (isDark ? 'light' : 'dark') : 'auto')}>
+          <Icon name={isDark ? 'moon' : 'sun'}/>{themeMode === 'auto' ? 'Auto' : themeMode === 'dark' ? 'Dark' : 'Light'}</button>
+      </footer>
     </div>
   </div>;
 }
 
-(window as any).__HERMES_PLUGINS__.register('hermes-workbench', Workbench);
+/** Where `hermes workbench` installs the desktop app's renderer (with the browser shim). */
+function desktopUrl(profile: string): string {
+  const base = String((window as any).__HERMES_BASE_PATH__ || '').replace(/\/+$/, '');
+  return `${base}/dashboard-plugins/hermes-workbench/desktop/index.html${profile === 'default' ? '' : `?profile=${encodeURIComponent(profile)}`}`;
+}
+
+/**
+ * The Hermes desktop app's own interface in a full-window, same-origin frame. Its Electron
+ * bridge is replaced by desktop-web/hermes-web-shim.js, which borrows this page's SDK for auth.
+ */
+function DesktopFrame({ profile }: { profile: string }) {
+  const root = useRef(null as HTMLDivElement | null);
+  useLiftAboveHost(root);
+  return <div className="hwb-host"><div ref={root} className="hwb-desktop">
+    <iframe title="Hermes" src={desktopUrl(profile)} allow="clipboard-read; clipboard-write; microphone"/>
+  </div></div>;
+}
+
+/** Desktop UI when installed; the built-in UI otherwise, or when `?ui=classic` asks for it. */
+function WorkbenchRoot() {
+  const [profile, setProfile] = useState(urlProfile);
+  const [ui, setUi] = useState(() => new URLSearchParams(window.location.search).get('ui') === 'classic' ? 'classic' : 'checking');
+  useEffect(() => {
+    // The dashboard may re-point ?profile= after load (sticky active profile); follow it.
+    const timer = setInterval(() => setProfile((old: string) => { const next = urlProfile(); return next === old ? old : next; }), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    if (ui !== 'checking') return;
+    let alive = true;
+    fetch(desktopUrl('default'), { cache: 'no-store' })
+      .then(res => { if (alive) setUi(res.ok ? 'desktop' : 'classic'); }, () => { if (alive) setUi('classic'); });
+    return () => { alive = false; };
+  }, [ui]);
+  if (ui === 'checking') return <div className="hwb-host"><div className="hwb-desktop"/></div>;
+  if (ui === 'desktop') return <DesktopFrame key={profile} profile={profile}/>;
+  return <Workbench key={profile} profile={profile}/>;
+}
+
+(window as any).__HERMES_PLUGINS__.register('hermes-workbench', WorkbenchRoot);

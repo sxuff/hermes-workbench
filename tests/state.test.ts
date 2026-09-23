@@ -38,6 +38,7 @@ test('reducer: tools, delegation, usage and terminal error events preserve paylo
   s = event(s, 'a', 'tool.progress', { tool_id: 'tool-1', context: 'running' });
   s = event(s, 'a', 'tool.complete', { tool_id: 'tool-1', result: '/tmp' });
   assert.deepEqual(s.threads.a.tools['tool-1'], { tool_id: 'tool-1', name: 'terminal', args: { command: 'pwd' }, context: 'running', result: '/tmp', status: 'complete' });
+  assert.deepEqual(s.threads.a.messages, [{ role: 'tool', live: true, tool_id: 'tool-1', name: 'terminal', args: { command: 'pwd' }, context: 'running', result: '/tmp', status: 'complete' }]);
   s = event(s, 'a', 'subagent.start', { subagent_id: 'agent', goal: 'check' });
   s = event(s, 'a', 'subagent.complete', { subagent_id: 'agent' });
   assert.deepEqual(s.threads.a.agents, [{ subagent_id: 'agent', goal: 'check', status: 'complete' }]);
@@ -95,4 +96,24 @@ test('reducer: prompt outcomes update exact client ID without contaminating anot
   s = reduce(s, { type: 'prompt.result', sessionId: 'a', clientId: 'one', status: 'uncertain' });
   assert.deepEqual(s.threads.a.messages.map(m => m.delivery), ['uncertain', 'pending']);
   assert.deepEqual(s.threads.b.messages, []);
+});
+
+test('reducer: tool rows stay inside their turn, after text streamed before them', () => {
+  let s = bound();
+  s = event(s, 'a', 'message.start');
+  s = event(s, 'a', 'thinking.delta', { text: 'plan' });
+  s = event(s, 'a', 'message.delta', { text: 'Checking.' });
+  s = event(s, 'a', 'tool.start', { tool_id: 't1', name: 'terminal' });
+  s = event(s, 'a', 'tool.complete', { tool_id: 't1', todos: [{ id: '1', content: 'x', status: 'done' }] });
+  s = event(s, 'a', 'message.complete', { text: 'First done.' });
+  s = reduce(s, { type: 'prompt.pending', sessionId: 'a', clientId: 'c2', text: 'again', mode: 'submit' });
+  s = event(s, 'a', 'message.start');
+  s = event(s, 'a', 'tool.start', { tool_id: 't2', name: 'read_file' });
+  s = event(s, 'a', 'message.complete', { text: 'Second done.' });
+  assert.deepEqual(s.threads.a.messages.map(m => `${m.role}:${m.text ?? m.tool_id}`),
+    ['assistant:Checking.', 'tool:t1', 'assistant:First done.', 'user:again', 'tool:t2', 'assistant:Second done.']);
+  assert.equal(s.threads.a.messages[0].reasoning, 'plan');
+  assert.deepEqual(s.threads.a.todos, [{ id: '1', content: 'x', status: 'done' }]);
+  s = event(s, 'a', 'todo.updated', { todos: [], revision: 2 });
+  assert.deepEqual(s.threads.a.todos, []);
 });

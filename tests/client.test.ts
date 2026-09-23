@@ -183,3 +183,26 @@ test('fixture transport: session creation pins safety fields and refuses incompl
   }
   assert.deepEqual(client.state.threads, {});
 });
+
+test('fixture transport: a named profile scopes every call and refuses sessions from another profile', async t => {
+  const sockets: FixtureSocket[] = [];
+  const client = new WorkbenchClient({ api: { buildWsUrl: () => 'ws://fixture.invalid/api/ws' } }, {
+    profile: 'work', socketFactory: () => { const s = new FixtureSocket(); sockets.push(s); return s as unknown as WebSocket; },
+    autoReconnect: false, heartbeatIntervalMs: 0,
+  });
+  t.after(() => client.disconnect());
+  const connecting = client.connect(); await tick(); sockets[0].open(); await connecting;
+  const socket = sockets[0];
+  void client.listSessions().catch(() => {});
+  assert.equal(socket.last().params.profile, 'work');
+  const created = client.createSession();
+  assert.equal(socket.last().params.profile, 'work');
+  socket.reply(socket.last(), { ...snapshot('w'), info: { profile_name: 'work' } });
+  await created;
+  void client.stop('w').catch(() => {});
+  assert.equal(socket.last().params.profile, 'work');
+  const foreign = client.createSession();
+  socket.reply(socket.last(), snapshot('d'));
+  await assert.rejects(foreign, /outside the work profile/);
+  assert.equal(new WorkbenchClient({}, { profile: '../etc' }).profile, 'default');
+});
