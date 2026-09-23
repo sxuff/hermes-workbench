@@ -6,11 +6,4 @@ __pycache__/
 dashboard/desktop/
 dashboard/desktop.staging/
 demo/out/
-demo/video/assets/
-demo/video/renders/
-demo/video/snapshots/
-demo/video/.hyperframes/
-demo/video/AGENTS.md
-demo/video/CLAUDE.md
-demo/video/.thumbnails/
-demo/video/.media/
+demo/video/

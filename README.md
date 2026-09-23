@@ -2,9 +2,7 @@
 
 The Hermes desktop app, in your browser. `hermes workbench` opens the desktop app's own interface (sessions, bots and group chats, `/` commands, model picker, attachments, skills, cron, approvals) as a browser tab, served by your Hermes install. Useful on a headless server or VPS, on a machine where you can't install the desktop app, or on a tablet.
 
-[![Hermes Workbench: the Hermes desktop app in a browser tab](docs/media/hero.png)](docs/media/launch.mp4)
-
-[Watch the 15-second clip](docs/media/launch.mp4): one command, then Hermes finds and fixes a real bug in the browser.
+![Hermes Workbench: the Hermes desktop app in a browser tab](docs/media/hero.png)
 
 | `/` commands | Model picker |
 | --- | --- |
@@ -102,7 +100,7 @@ Local evidence is in `evidence/native-smoke.json` and `evidence/ui-smoke.json`; 
 
 ## Demo visuals
 
-The images and clip come from real Hermes runs against a scripted model in a throwaway home; `demo/README.md` shows how to rebuild them.
+The images come from real Hermes runs against a scripted model in a throwaway home; `demo/README.md` shows how to rebuild them.
 
 ## Implementation
 
