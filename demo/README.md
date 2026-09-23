@@ -53,14 +53,4 @@ node demo/compose.mjs demo/out/raw/session.png docs/media
 node demo/record.mjs demo/out/app.mp4       # reset again first
 ```
 
-## The clip
-
-`video/` is a HyperFrames project: a terminal typing `hermes workbench`, the recording (typing at 2x, the agent at 5x, the result at 1x with a push-in), and an end card. It needs two local files that aren't committed: `assets/app.mp4` (copy `demo/out/app.mp4`) and `assets/fonts/Collapse-Bold.woff2` (the Nous display face, from `node_modules/@nous-research/ui/dist/fonts` in a Hermes checkout).
-
-```sh
-cd demo/video
-npx hyperframes check
-npx hyperframes render --quality delivery --video-frame-format png -o renders/launch.mp4
-```
-
 Clean up: `HERMES_HOME='W:\home' hermes workbench stop --port 9219`, stop the mock model, then `MSYS_NO_PATHCONV=1 subst W: /D`.
