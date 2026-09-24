@@ -5,7 +5,8 @@ api_version: 1
 requires_hermes: ">=0.21"
 description: >-
   The Hermes desktop app in your browser. `hermes workbench` opens the desktop
-  interface as its own app window, served by the dashboard. Registers no tools or hooks.
+  interface as its own app window, served by the dashboard. Registers one CLI
+  command; no tools or hooks. Community plugin, not a Nous Research product.
 author: sxuff
 license: MIT
 homepage: https://github.com/sxuff/hermes-workbench

@@ -2,6 +2,8 @@
 
 The Hermes desktop app, in your browser. `hermes workbench` opens the desktop app's own interface (sessions, bots and group chats, `/` commands, model picker, attachments, skills, cron, approvals) in a browser tab, served by your Hermes install. Useful on a headless server or VPS, on a machine where you can't install the desktop app, or on a tablet.
 
+A community plugin, not a Nous Research product.
+
 ![Hermes Workbench: the Hermes desktop app in a browser tab](docs/media/hero.png)
 
 ## Requirements
@@ -48,7 +50,7 @@ One plugin, three parts:
 - **The desktop interface.** The Hermes desktop app is Electron around an ordinary web app, and it reaches the OS only through one bridge object, `window.hermesDesktop`. `desktop-web/hermes-web-shim.js` stands in for it in the browser. REST and the gateway socket go through the dashboard's authenticated SDK, so loopback-token and OAuth-gated dashboards both work. The shim reports a remote connection, so the desktop's own remote-host paths do the rest: attachments upload their bytes, and file trees and git diffs come from the backend.
 - **The page** (`dashboard/`) is a dashboard plugin. At `/workbench` it covers the whole window and shows the desktop interface in a same-origin frame, borrowing the dashboard's login.
 
-The interface is built from your own Hermes sources, so it always matches your backend's version. The command uses whichever is newer: the Electron app's own build (`apps/desktop/dist`, from `hermes desktop`), or a web-only build from `hermes workbench build`. The web-only build is what headless servers want. It copies the desktop sources into `~/.hermes/hermes-workbench/desktop-build`, installs their dependencies there with install scripts disabled (no Electron download, no native compiling, no C++ toolchain) using Hermes's managed Node, and runs Vite. Your Hermes checkout is only read, never installed into, so `hermes update` stays clean. Dependencies are cached until Hermes changes its lockfile.
+The interface is built from your own Hermes sources, so it always matches your backend's version. The command uses whichever is newer: the Electron app's own build (`apps/desktop/dist`, from `hermes desktop`), or a web-only build from `hermes workbench build`. The web-only build is what headless servers want. It copies the desktop sources into `~/.hermes/hermes-workbench/desktop-build`, runs `npm install --ignore-scripts` there, guided by Hermes's lockfile (no Electron download, no native compiling, no C++ toolchain), using Hermes's managed Node, and runs Vite. The result is synced into the plugin's own directory. Your Hermes checkout is only read, never installed into, so `hermes update` stays clean. Dependencies are cached until Hermes changes its lockfile, and the build reruns after each Hermes update.
 
 What doesn't carry over from Electron: separate windows, the terminal and browser side panes, the desktop pet, glass effects and in-app updates (update with `hermes update`). The shim is unofficial, so a desktop release that changes the bridge may need a shim update.
 
