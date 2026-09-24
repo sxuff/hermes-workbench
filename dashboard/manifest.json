@@ -1,5 +1,5 @@
 {
- "name": "hermes-workbench", "label": "Workbench", "description": "The Hermes desktop app in your browser.",
- "version": "0.2.0", "icon": "MessageSquare", "tab": {"path": "/workbench", "position": "before:chat"},
+ "name": "hermes-workbench", "label": "Workbench", "description": "The Hermes desktop app in your browser. Community plugin, not a Nous Research product.",
+ "version": "0.2.2", "icon": "MessageSquare", "tab": {"path": "/workbench", "position": "before:chat"},
  "entry": "dist/index.js", "css": "dist/style.css"
 }

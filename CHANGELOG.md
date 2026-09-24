@@ -2,6 +2,14 @@
 
 All notable changes to Hermes Workbench are documented here.
 
+## 0.2.2 - 2026-09-24
+
+### Docs
+
+- `plugin.yaml`, the dashboard manifest, the README and `SECURITY.md` say this is a community plugin, not a Nous Research product, as the catalog listing does.
+- The build is described as `npm install --ignore-scripts` guided by Hermes's lockfile (not `npm ci`), running on the first `hermes workbench` and after each Hermes update.
+- The dashboard manifest's version, which had stayed at 0.2.0, matches the release.
+
 ## 0.2.1 - 2026-09-23
 
 ### Docs
