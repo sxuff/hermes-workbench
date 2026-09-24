@@ -64,8 +64,12 @@ Use small commits with a short Conventional Commit subject such as `fix(shim): .
 
 ## Releasing
 
-1. Bump `version` in `plugin.yaml` and `package.json`, and add a `CHANGELOG.md` section.
-2. Merge, then tag the merge commit `vX.Y.Z` and publish a GitHub release with the changelog section.
+Releases are automated with [release-please](https://github.com/googleapis/release-please), driven by Conventional Commit titles on `main`. Pull requests are squash-merged, so the PR title is the commit that lands.
+
+1. Every push to `main` updates an open release PR (`chore(main): release X.Y.Z`). It bumps the version in `package.json`, `package-lock.json`, `plugin.yaml` and `dashboard/manifest.json`, and adds a `CHANGELOG.md` section built from the commit titles.
+2. Merge the release PR when you want to ship. That tags `vX.Y.Z` and publishes the GitHub release.
 3. Update the Hermes plugin catalog entry (`plugin-catalog/hermes-workbench.yaml` in NousResearch/hermes-agent) with a PR that bumps `sha` and `version` to the tagged commit.
+
+How the version moves: `feat` bumps the minor version, `fix`, `perf` and `docs` bump the patch, and a `!` after the type or a `BREAKING CHANGE:` footer bumps the major. `docs` counts because the catalog page shows the README at the pinned commit. `chore`, `ci`, `test`, `build`, `refactor` and `style` stay out of the changelog and don't trigger a release on their own. Don't edit version fields by hand.
 
 The plugin must never update itself: users get new versions only through a reviewed catalog pin and `hermes plugins update`.
