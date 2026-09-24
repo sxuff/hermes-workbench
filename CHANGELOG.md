@@ -2,6 +2,14 @@
 
 All notable changes to Hermes Workbench are documented here.
 
+## [0.2.2](https://github.com/sxuff/hermes-workbench/compare/v0.2.1...v0.2.2) (2026-09-24)
+
+
+### Docs
+
+* state that this is a community plugin, not a Nous product ([2aca84a](https://github.com/sxuff/hermes-workbench/commit/2aca84a8d0d3d89f16e2dbdbe93d6689d1e25bb9))
+* state that this is a community plugin, not a Nous product ([3675dfa](https://github.com/sxuff/hermes-workbench/commit/3675dfa49cbecc8a0699bdcc5d0d7226c2943042))
+
 ## 0.2.1 - 2026-09-23
 
 ### Docs
