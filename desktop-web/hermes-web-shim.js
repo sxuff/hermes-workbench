@@ -85,9 +85,55 @@
     files.set(path, blob);
     return path;
   }
-  function readKept(path) {
+  // An image from the transcript (a MEDIA delivery, an artifact thumbnail) has two paths through
+  // this bridge. The renderer treats our connection id 'local' — the registry's primary connection —
+  // as "this machine's disk, use the Electron bridge" (lib/media.ts resolveMediaDisplaySrc,
+  // markdown-text.tsx useOpenMediaFile), and the two members it reaches for could not answer:
+  //   readFileDataUrl — only knew the blobs THIS browser kept (attachments), so any path on the
+  //     backend's disk answered null and the row fell through to its failure line ("Couldn't load
+  //     <name>." over an Open image button that did nothing);
+  //   saveGatewayFile — absent, and the catch-all stub resolves undefined, so the download settled
+  //     into nothing: no file, no toast, no error.
+  // Both now go through the REST routes the renderer itself uses in remote mode.
+  function backendPath(path) {
+    return String(path == null ? '' : path).replace(/^file:\/\//, '');
+  }
+
+  function readFile(path) {
     var blob = files.get(path);
-    return blob ? dataUrlOf(blob) : Promise.resolve(null);
+    if (blob) return dataUrlOf(blob);
+    return api({ path: '/api/fs/read-data-url?path=' + encodeURIComponent(backendPath(path)), profile: profile }).then(function (result) {
+      var dataUrl = typeof result === 'string' ? result : result && result.dataUrl;
+      if (!dataUrl) throw new Error('Backend returned no file data for ' + path);
+      return dataUrl;
+    });
+  }
+
+  // Electron opens a save dialog and writes the bytes; a browser has neither, so the bytes are
+  // handed to the browser's own download. Same result shape as the IPC handler, so the renderer's
+  // saved/failed toasts keep working.
+  function saveGatewayFile(payload) {
+    var path = payload && payload.path;
+    if (!path) return Promise.reject(new Error('Missing gateway file path'));
+    var name = String((payload && payload.suggestedName) || backendPath(path).split('/').filter(Boolean).pop() || 'download');
+    return sdk.authedFetch(withProfile('/api/fs/download?path=' + encodeURIComponent(backendPath(path)), (payload && payload.profile) || profile))
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.status + ': ' + (res.statusText || 'download failed'));
+        return res.blob();
+      })
+      .then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = url;
+        link.download = name;
+        link.rel = 'noopener';
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+        return { path: path, saved: true };
+      });
   }
   function pickFiles(options) {
     return new Promise(function (resolve) {
@@ -413,8 +459,12 @@
     requestMicrophoneAccess: function () { return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (s) { s.getTracks().forEach(function (t) { t.stop(); }); return true; }, function () { return false; }); },
     getPathForFile: function (file) { return file ? keep(file, file.name) : ''; },
     selectPaths: function (options) { return pickFiles(options); },
-    readFileDataUrl: readKept,
-    readFileDataUrlForAttach: readKept,
+    // Kept blobs first (attachments are virtual paths this browser owns), then the backend's disk
+    // over REST — see readFile above. readFileText keeps its old shape: the facade only reaches the
+    // native reader in local mode, which the browser never reports.
+    readFileDataUrl: readFile,
+    readFileDataUrlForAttach: readFile,
+    saveGatewayFile: saveGatewayFile,
     readFileText: function (path) { var b = files.get(path); return b ? b.text() : Promise.resolve(null); },
     saveImageBuffer: function (data, ext, name) {
       var type = EXT_TYPES[String(ext || '').toLowerCase()] || 'image/png';
