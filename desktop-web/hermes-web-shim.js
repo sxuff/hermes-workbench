@@ -122,6 +122,13 @@
     // short-circuits the Proxy, and bootstrap falls back to its built-in themes.
     localSkin: null,
 
+    // Settings reads and writes this pair as `get()/set()` returning `{maxMb}` — the Electron
+    // shape; a bare number left the size field without a value to show.
+    dataUrlReadMax: {
+      get: function () { return Promise.resolve({ maxMb: 16 }); },
+      set: function (maxMb) { return Promise.resolve({ maxMb: maxMb }); },
+    },
+
     getConnection: function (p) { return connection(p); },
     getConnectionFor: function (payload) { return connection(payload && payload.profile); },
     getGatewayWsUrl: function () { return wsUrl().then(function (url) { return { ok: true, wsUrl: url }; }, function (e) { return { ok: false, error: String(e && e.message || e) }; }); },
