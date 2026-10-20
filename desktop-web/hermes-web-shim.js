@@ -113,7 +113,14 @@
 
   var bridge = {
     glassSupported: false, translucencySupported: false, localModelsEnabled: false,
-    guestOnboardingEnabled: false, skipIntro: true, dataUrlReadMax: 16 * 1024 * 1024,
+    guestOnboardingEnabled: false, skipIntro: true,
+
+    // Read SYNCHRONOUSLY during theme bootstrap, before any Proxy fallback can help: the renderer
+    // treats the value as `{skin: {name}, profile}` and calls `.trim()` on `skin.name`. Left
+    // undefined, the catch-all Proxy handed back a function stub, the `.trim()` call threw
+    // `(e ?? "").trim is not a function` and the interface never finished booting. An explicit null
+    // short-circuits the Proxy, and bootstrap falls back to its built-in themes.
+    localSkin: null,
 
     getConnection: function (p) { return connection(p); },
     getConnectionFor: function (payload) { return connection(payload && payload.profile); },
