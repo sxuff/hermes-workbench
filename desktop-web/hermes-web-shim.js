@@ -446,6 +446,16 @@
       // Empty appVersion: the status bar hides the desktop-client version item instead of showing "vweb".
       return Promise.resolve({ appVersion: '', electronVersion: '', nodeVersion: '', platform: navigator.platform || 'web', hermesRoot: '' });
     },
+    // The renderer's fire-and-forget diagnostic line. Electron clamps it (electron/main.ts,
+    // hermes:logs:renderer-line) and appends it to desktop.log; the notifyError path posts the full
+    // stack of an error toast here, because the toast itself shows only the summarized copy, and the
+    // onboarding kickoff machine posts its transitions. A browser has no log file, so the frame
+    // console IS the log — same clamp, error level so the line survives the DevTools default filter.
+    logLine: function (line) {
+      var text = typeof line === 'string' ? line.slice(0, 6000) : '';
+
+      if (text) console.error('[hermes-web] ' + text);
+    },
     // In-app updates swap the Electron app; in the browser, update Hermes with `hermes update`.
     updates: namespace('updates', {
       check: function () { return Promise.resolve({ supported: false, reason: 'web', message: 'Update Hermes with `hermes update`.' }); },
