@@ -132,13 +132,13 @@
       return Promise.resolve({ appVersion: '', electronVersion: '', nodeVersion: '', platform: navigator.platform || 'web', hermesRoot: '' });
     },
     // In-app updates swap the Electron app; in the browser, update Hermes with `hermes update`.
-    updates: {
+    updates: namespace('updates', {
       check: function () { return Promise.resolve({ supported: false, reason: 'web', message: 'Update Hermes with `hermes update`.' }); },
       apply: unsupported('In-app updates'),
       getBranch: function () { return Promise.resolve({ branch: '' }); },
       setBranch: function () { return Promise.resolve({ branch: '' }); },
       onProgress: unsubscribe,
-    },
+    }),
 
     notify: function (payload) {
       try {
@@ -192,13 +192,45 @@
       get: function (key) { return Promise.resolve(store.get(key, undefined)); },
       set: function (key, value) { store.set(key, value); return Promise.resolve(true); },
     },
-    zoom: { get: function () { return Promise.resolve(1); }, set: asyncNoop, onChange: unsubscribe },
-    wakeIndicator: { getState: function () { return Promise.resolve({}); }, setState: noop, onState: unsubscribe },
-    petOverlay: new Proxy({}, { get: function () { return asyncNoop; } }),
-    introReveal: { open: asyncNoop, close: asyncNoop, skip: noop, ready: noop, onSkip: unsubscribe },
-    chatOnboarding: { grow: noop, soloBoot: noop },
-    hud: new Proxy({}, { get: function () { return asyncNoop; } }),
+    // Shapes taken from the renderer: Settings reads `zoom.get().percent`, subscribes with
+    // `zoom.onChanged(cb)` and drags the slider through `zoom.setPercent(n)`; the app's overlay
+    // path asks for `zoom.factor()`.
+    zoom: namespace('zoom', {
+      get: function () { return Promise.resolve({ percent: 100, factor: 1 }); },
+      set: asyncNoop,
+      setPercent: asyncNoop,
+      factor: function () { return 1; },
+      onChange: unsubscribe,
+      onChanged: unsubscribe,
+    }),
+    wakeIndicator: namespace('wakeIndicator', {
+      getState: function () { return Promise.resolve({}); }, setState: noop, onState: unsubscribe,
+    }),
+    // Native OS windows are gone in the browser, so these stay no-ops — but the renderer calls
+    // `control`/`setBounds`/`pushState` and subscribes with `onControl`/`onState`.
+    petOverlay: namespace('petOverlay', {}),
+    introReveal: namespace('introReveal', {
+      open: asyncNoop, close: asyncNoop, skip: noop, ready: noop, onSkip: unsubscribe,
+    }),
+    chatOnboarding: namespace('chatOnboarding', { grow: noop, soloBoot: noop }),
+    // `hud.windowing` is read as a plain data object (nativeDrag/controlDrag/solid/...).
+    hud: namespace('hud', { windowing: {} }),
   };
+
+  // The namespaces the renderer reaches into (`zoom.onChanged`, `petOverlay.control`,
+  // `chatOnboarding.size`, ...). A plain object hands back `undefined` for any member that is not
+  // listed, and the renderer calls the result immediately — a TypeError inside its error boundary,
+  // with the whole section gone. Unknown members go through the same stub() the top-level bridge
+  // uses: `on*` names become unsubscribe factories, everything else resolves to undefined.
+  function namespace(name, members) {
+    return new Proxy(members, {
+      get: function (target, key) {
+        if (key in target) return target[key];
+        if (typeof key !== 'string' || key === 'then') return undefined;
+        return stub(name + '.' + key);
+      },
+    });
+  }
 
   // Anything else: functions resolve to undefined (the renderer treats that as "not available"),
   // `on*` subscriptions return an unsubscribe, namespaces recurse.
@@ -209,7 +241,9 @@
       return subscription ? noop : Promise.resolve(undefined);
     };
     return new Proxy(fn, {
-      get: function (_t, key) { return typeof key === 'string' ? stub(path + '.' + key) : undefined; },
+      // `then` stays undefined: a stubbed member that the renderer awaits must not look thenable,
+      // or the await never settles.
+      get: function (_t, key) { return typeof key === 'string' && key !== 'then' ? stub(path + '.' + key) : undefined; },
     });
   }
   window.hermesDesktop = new Proxy(bridge, {
