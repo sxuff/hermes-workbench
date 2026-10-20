@@ -111,6 +111,206 @@
     set: function (key, value) { try { localStorage.setItem('hermes-web:' + key, JSON.stringify(value)); } catch (e) {} },
   };
 
+  // Settings -> Sessions ("Default project directory") and the boot-time workspace seeding both
+  // read `settings.getDefaultProjectDir()`. Shapes mirror Electron's ipc handlers (electron/main.ts):
+  // get -> { defaultLabel, dir, resolvedCwd }, set -> { dir }, pick -> { canceled, dir }.
+  //
+  // Electron's picker is a native dialog, and a browser has no equivalent. The path that matters
+  // here is a path on the BACKEND, where sessions actually run, so the picker browses the backend's
+  // disk over the dashboard REST API (/api/fs/list) — the same data the app's own remote folder
+  // picker shows — and an unreadable path is refused instead of stored.
+  var DEFAULT_PROJECT_DIR_KEY = 'defaultProjectDir';
+  var defaultProjectDir = store.get(DEFAULT_PROJECT_DIR_KEY, '') || '';
+
+  function backendCwd() {
+    return api({ path: '/api/fs/default-cwd' }).then(
+      function (result) { return (result && result.cwd) || ''; },
+      function () { return ''; }
+    );
+  }
+
+  function listBackendDirs(path) {
+    return api({ path: '/api/fs/list?path=' + encodeURIComponent(path) }).then(function (result) {
+      if (result && result.error) throw new Error(result.error);
+      return ((result && result.entries) || []).filter(function (entry) { return entry.isDirectory; });
+    });
+  }
+
+  function getDefaultProjectDir() {
+    return backendCwd().then(function (cwd) {
+      return {
+        defaultLabel: cwd,
+        dir: defaultProjectDir || null,
+        // Electron resolves `dir` against the local home; the backend's own cwd is the equivalent
+        // floor here.
+        resolvedCwd: defaultProjectDir || cwd,
+      };
+    });
+  }
+
+  function setDefaultProjectDir(dir) {
+    var next = typeof dir === 'string' && dir.trim() ? dir.trim() : null;
+
+    if (!next) {
+      defaultProjectDir = '';
+      store.set(DEFAULT_PROJECT_DIR_KEY, '');
+      return Promise.resolve({ dir: null });
+    }
+
+    // Electron mkdir -p's the path. Over REST the best we can do is prove it reads as a directory;
+    // a bad path is refused rather than stored, so a new chat cannot be pinned to a folder that
+    // sessions cannot start in.
+    return listBackendDirs(next).then(function () {
+      defaultProjectDir = next;
+      store.set(DEFAULT_PROJECT_DIR_KEY, next);
+      return { dir: next };
+    }, function (error) {
+      throw new Error('Not a readable directory on the backend: ' + next + ' (' + (error && error.message || error) + ')');
+    });
+  }
+
+  function parentDir(path) {
+    var value = String(path || '/').replace(/\/+$/, '') || '/';
+
+    if (value === '/') return '/';
+
+    var cut = value.lastIndexOf('/');
+
+    return cut <= 0 ? '/' : value.slice(0, cut);
+  }
+
+  // Metric and token parity with the app's own folder dialog (right-sidebar/files/remote-picker.tsx
+  // over its Dialog shell): the same theme tokens, the same size, the same layer from the app's
+  // z-index ladder instead of a literal. Styles live in one injected sheet, so rows and buttons get
+  // real :hover states without a listener per element.
+  var PICKER_CSS =
+    '[data-hermes-web-folder-picker] .wb-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:12px;line-height:16px;color:var(--ui-text-secondary,inherit);cursor:pointer}' +
+    '[data-hermes-web-folder-picker] .wb-row:hover{background:var(--ui-row-hover-background,rgba(127,127,127,0.16));color:var(--ui-text-primary,inherit)}' +
+    '[data-hermes-web-folder-picker] .wb-btn{border:none;border-radius:2.5px;font-family:inherit;font-size:12px;line-height:16px;font-weight:500;padding:4px 10px;cursor:pointer;white-space:nowrap}' +
+    '[data-hermes-web-folder-picker] .wb-ghost{background:transparent;color:var(--ui-text-secondary,inherit)}' +
+    '[data-hermes-web-folder-picker] .wb-ghost:hover{background:var(--chrome-action-hover,rgba(127,127,127,0.14));color:var(--ui-text-primary,inherit)}' +
+    '[data-hermes-web-folder-picker] .wb-primary{background:var(--color-primary,var(--dt-primary,#3b6ef5));color:var(--color-primary-foreground,var(--dt-primary-foreground,#fcfcfc))}' +
+    '[data-hermes-web-folder-picker] .wb-primary:hover{filter:brightness(1.08)}';
+
+  function pickerStyles() {
+    if (document.getElementById('hermes-web-folder-picker-styles')) return;
+
+    var tag = document.createElement('style');
+
+    tag.id = 'hermes-web-folder-picker-styles';
+    tag.textContent = PICKER_CSS;
+    document.head.appendChild(tag);
+  }
+
+  // The app ships the Codicon font with its own stylesheet, so its folder glyphs are available here.
+  function codicon(name) {
+    var icon = document.createElement('i');
+
+    icon.className = 'codicon codicon-' + name;
+    icon.style.cssText = 'font-size:14px;line-height:1;flex:none';
+    return icon;
+  }
+
+  function pickerButton(label, onClick, primary) {
+    var el = document.createElement('button');
+
+    el.type = 'button';
+    el.className = primary ? 'wb-btn wb-primary' : 'wb-btn wb-ghost';
+    el.textContent = label;
+    el.onclick = onClick;
+    return el;
+  }
+
+  // Minimal folder browser over the backend's disk. There is no native OS dialog in a browser, and
+  // the app's own remote picker (right-sidebar/files/remote-picker.tsx) is not reachable from this
+  // bridge — this is the smallest thing that lets the setting be CHOSEN rather than typed. Copy,
+  // dimensions and tokens mirror that dialog so it reads as one of the app's windows.
+  function pickBackendFolder(start) {
+    return new Promise(function (resolve) {
+      var current = String(start || '/').trim() || '/';
+      var done = false;
+      var overlay = document.createElement('div');
+      var panel = document.createElement('div');
+      var header = document.createElement('div');
+      var title = document.createElement('div');
+      var desc = document.createElement('div');
+      var pathLine = document.createElement('div');
+      var list = document.createElement('div');
+      var footer = document.createElement('div');
+
+      function close(dir) {
+        if (done) return;
+        done = true;
+        document.removeEventListener('keydown', onKey, true);
+        overlay.remove();
+        resolve(dir);
+      }
+
+      function onKey(event) {
+        if (event.key !== 'Escape') return;
+        event.stopPropagation();
+        close(null);
+      }
+
+      function row(label, onClick, dim, icon) {
+        var item = document.createElement('div');
+
+        item.className = 'wb-row';
+        if (dim) item.style.opacity = '0.5';
+        if (icon) item.appendChild(codicon(icon));
+        item.appendChild(document.createTextNode(label));
+        if (onClick) item.onclick = onClick;
+        return item;
+      }
+
+      function load() {
+        pathLine.textContent = current;
+        pathLine.title = current;
+        list.textContent = '';
+        list.appendChild(row('..', current === '/' ? null : function () { current = parentDir(current); load(); }, true, 'folder'));
+        listBackendDirs(current).then(function (dirs) {
+          dirs.sort(function (a, b) { return a.name.localeCompare(b.name); });
+          if (!dirs.length) list.appendChild(row('This folder is empty.', null, true));
+          for (var i = 0; i < dirs.length; i++) {
+            (function (entry) {
+              list.appendChild(row(entry.name, function () { current = entry.path; load(); }, false, 'folder'));
+            })(dirs[i]);
+          }
+        }, function (error) {
+          list.appendChild(row('Could not read this folder (' + (error && error.message || error) + ').', null, true));
+        });
+      }
+
+      pickerStyles();
+      overlay.setAttribute('data-hermes-web-folder-picker', '');
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:var(--z-modal,130);display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,0.22);backdrop-filter:blur(2px)';
+      overlay.onclick = function (event) { if (event.target === overlay) close(null); };
+      panel.style.cssText = 'display:flex;flex-direction:column;width:100%;max-width:32rem;height:min(36rem,calc(100vh - 4rem));overflow:hidden;border:1px solid var(--stroke-nous,rgba(127,127,127,0.25));border-radius:var(--radius-xl,12px);background:var(--ui-chat-bubble-background,var(--ui-bg-elevated,#1c1c1f));color:var(--ui-text-primary,inherit);box-shadow:0 24px 64px rgba(0,0,0,0.28);font-family:inherit;font-size:13px;line-height:1.45';
+      header.style.cssText = 'flex:none;padding:12px 16px;border-bottom:1px solid var(--ui-stroke-secondary,rgba(127,127,127,0.25))';
+      title.textContent = 'Choose remote folder';
+      title.style.cssText = 'font-size:13px;font-weight:600';
+      desc.textContent = 'Browse folders on the connected backend. The choice becomes the default project directory for new sessions.';
+      desc.style.cssText = 'margin-top:4px;font-size:12px;color:var(--ui-text-secondary,inherit)';
+      pathLine.style.cssText = 'flex:none;padding:8px 12px;border-bottom:1px solid var(--ui-stroke-secondary,rgba(127,127,127,0.25));font-size:12px;color:var(--ui-text-secondary,inherit);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      list.setAttribute('data-hermes-web-folder-picker-list', '');
+      list.style.cssText = 'flex:1;min-height:0;overflow:auto;padding:8px';
+      footer.style.cssText = 'flex:none;display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--ui-stroke-secondary,rgba(127,127,127,0.25))';
+
+      footer.appendChild(pickerButton('Cancel', function () { close(null); }));
+      footer.appendChild(pickerButton('Select folder', function () { close(current); }, true));
+      header.appendChild(title);
+      header.appendChild(desc);
+      panel.appendChild(header);
+      panel.appendChild(pathLine);
+      panel.appendChild(list);
+      panel.appendChild(footer);
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+      document.addEventListener('keydown', onKey, true);
+      load();
+    });
+  }
+
   // The app-wide default profile route. In Electron it lives in active-profile.json
   // (electron/desktop-profile.ts -> createDesktopProfilePreferences); the renderer reads it at boot
   // (use-gateway-boot -> desktop.profile.getDefault) and watches the $defaultProfileRoute mirror for
@@ -247,10 +447,18 @@
     sanitizeWorkspaceCwd: function (cwd) { return Promise.resolve({ cwd: typeof cwd === 'string' ? cwd.trim() : '', sanitized: false }); },
     readPluginSource: function () { return Promise.resolve(null); },
 
-    settings: {
+    settings: namespace('settings', {
       get: function (key) { return Promise.resolve(store.get(key, undefined)); },
       set: function (key, value) { store.set(key, value); return Promise.resolve(true); },
-    },
+      // The three members the renderer reads and writes for the default project directory.
+      getDefaultProjectDir: getDefaultProjectDir,
+      setDefaultProjectDir: setDefaultProjectDir,
+      pickDefaultProjectDir: function () {
+        return pickBackendFolder(defaultProjectDir || '/').then(function (dir) {
+          return dir ? { canceled: false, dir: dir } : { canceled: true, dir: null };
+        });
+      },
+    }),
     // `onDefaultChanged` returns an unsubscribe like every other subscription here, and fires for
     // the other readers in this frame; reads never throw, matching Electron's getDefault, which
     // answers null for an invalid entry too.
