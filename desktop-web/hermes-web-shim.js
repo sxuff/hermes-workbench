@@ -20,6 +20,16 @@
   var unsubscribe = function () { return noop; };
   var unsupported = function (what) { return function () { return Promise.resolve({ ok: false, error: what + ' is not available in the browser' }); }; };
 
+  // The desktop renderer rewrites navigator.clipboard.writeText to route it through this bridge
+  // (apps/desktop/src/lib/clipboard.ts -> installClipboardShim). Reading writeText lazily therefore
+  // made the bridge and the override call each other until the stack blew up (RangeError: maximum
+  // call stack size exceeded), and a click on the chat's copy icon silently left the clipboard
+  // untouched. Capture the real methods here, before the app boots: Electron's own bridge writes
+  // unconditionally, and so must this one.
+  var clipboardApi = navigator.clipboard || null;
+  var nativeWriteText = clipboardApi && clipboardApi.writeText ? clipboardApi.writeText.bind(clipboardApi) : null;
+  var nativeReadText = clipboardApi && clipboardApi.readText ? clipboardApi.readText.bind(clipboardApi) : null;
+
   function withProfile(path, p) {
     if (!p || p === 'default') return path;
     return path + (path.indexOf('?') < 0 ? '?' : '&') + 'profile=' + encodeURIComponent(p);
@@ -454,8 +464,16 @@
       } catch (e) { return Promise.resolve(false); }
     },
     openExternal: function (url) { window.open(url, '_blank', 'noopener,noreferrer'); return Promise.resolve(true); },
-    writeClipboard: function (text) { return navigator.clipboard.writeText(String(text == null ? '' : text)).then(function () { return true; }, function () { return false; }); },
-    readClipboard: function () { return navigator.clipboard.readText().catch(function () { return ''; }); },
+    // Use the captured native methods: the page's own override of navigator.clipboard.writeText
+    // must not be re-entered from here.
+    writeClipboard: function (text) {
+      if (!nativeWriteText) return Promise.resolve(false);
+      return nativeWriteText(String(text == null ? '' : text)).then(function () { return true; }, function () { return false; });
+    },
+    readClipboard: function () {
+      if (!nativeReadText) return Promise.resolve('');
+      return nativeReadText().catch(function () { return ''; });
+    },
     requestMicrophoneAccess: function () { return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (s) { s.getTracks().forEach(function (t) { t.stop(); }); return true; }, function () { return false; }); },
     getPathForFile: function (file) { return file ? keep(file, file.name) : ''; },
     selectPaths: function (options) { return pickFiles(options); },
