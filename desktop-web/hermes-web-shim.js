@@ -584,6 +584,25 @@
     chatOnboarding: namespace('chatOnboarding', { grow: noop, soloBoot: noop }),
     // `hud.windowing` is read as a plain data object (nativeDrag/controlDrag/solid/...).
     hud: namespace('hud', { windowing: {} }),
+
+    // The terminal pane (use-terminal-session.ts) reads `window.hermesDesktop.terminal` and calls
+    // `start()` first. The Proxy used to answer with a stub, so `start()` resolved to undefined and
+    // the pane died with "Cannot read properties of undefined (reading 'id')" — the renderer's own
+    // `if (!terminalApi)` guard never fires, because a stub is truthy.
+    //
+    // There is nothing to fall back on: this pane runs a shell on the computer where the app is
+    // installed (node-pty in the Electron main process), and the backend has no interactive-shell
+    // endpoint — `/api/pty` runs `hermes --tui` for the chat tab, `/api/console` takes one command at
+    // a time. Refuse with a readable reason instead of a TypeError.
+    terminal: namespace('terminal', {
+      start: function () {
+        return Promise.reject(new Error(
+          'not available in the browser build — this pane opens a shell on the computer where ' +
+            'the app is installed, and the web build runs on the server. Use the desktop app ' +
+            '(hermes desktop) for a local terminal.',
+        ));
+      },
+    }),
   };
 
   // The namespaces the renderer reaches into (`zoom.onChanged`, `petOverlay.control`,
