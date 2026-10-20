@@ -111,6 +111,51 @@
     set: function (key, value) { try { localStorage.setItem('hermes-web:' + key, JSON.stringify(value)); } catch (e) {} },
   };
 
+  // The app-wide default profile route. In Electron it lives in active-profile.json
+  // (electron/desktop-profile.ts -> createDesktopProfilePreferences); the renderer reads it at boot
+  // (use-gateway-boot -> desktop.profile.getDefault) and watches the $defaultProfileRoute mirror for
+  // its new-session target (new-session-route.ts). Storage and validation follow Electron's
+  // requireDesktopProfileRoute: same shape, same name rule, and an invalid or missing entry reads as
+  // null. Electron's extra check that the connection exists in its registry is dropped here — every
+  // route in the web build resolves through this one bridge connection.
+  var PROFILE_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+  var DEFAULT_PROFILE_KEY = 'defaultProfileRoute';
+  var defaultProfileWatchers = new Set();
+
+  function requireProfileRoute(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('A connection and profile route is required.');
+
+    var connectionId = value.connectionId;
+    var name = value.profile;
+
+    if (typeof name !== 'string' || !PROFILE_NAME_RE.test(name)) throw new Error('Invalid profile name.');
+    if (connectionId !== null && (typeof connectionId !== 'string' || !connectionId || connectionId.trim() !== connectionId)) {
+      throw new Error('Invalid connection id.');
+    }
+
+    return { connectionId: connectionId, profile: name };
+  }
+
+  function getDefaultProfileRoute() {
+    try {
+      return requireProfileRoute(store.get(DEFAULT_PROFILE_KEY, null));
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function setDefaultProfileRoute(value) {
+    var route = requireProfileRoute(value);
+
+    store.set(DEFAULT_PROFILE_KEY, route);
+    defaultProfileWatchers.forEach(function (watcher) {
+      // A subscriber must never make a stored preference look like a failed write.
+      try { watcher(route); } catch (e) {}
+    });
+
+    return route;
+  }
+
   var bridge = {
     glassSupported: false, translucencySupported: false, localModelsEnabled: false,
     guestOnboardingEnabled: false, skipIntro: true,
@@ -206,6 +251,23 @@
       get: function (key) { return Promise.resolve(store.get(key, undefined)); },
       set: function (key, value) { store.set(key, value); return Promise.resolve(true); },
     },
+    // `onDefaultChanged` returns an unsubscribe like every other subscription here, and fires for
+    // the other readers in this frame; reads never throw, matching Electron's getDefault, which
+    // answers null for an invalid entry too.
+    profile: namespace('profile', {
+      getDefault: function () { return Promise.resolve(getDefaultProfileRoute()); },
+      setDefault: function (route) {
+        try { return Promise.resolve(setDefaultProfileRoute(route)); }
+        catch (e) { return Promise.reject(e); }
+      },
+      onDefaultChanged: function (callback) {
+        if (typeof callback !== 'function') return noop;
+
+        defaultProfileWatchers.add(callback);
+
+        return function () { defaultProfileWatchers.delete(callback); };
+      },
+    }),
     // Shapes taken from the renderer: Settings reads `zoom.get().percent`, subscribes with
     // `zoom.onChanged(cb)` and drags the slider through `zoom.setPercent(n)`; the app's overlay
     // path asks for `zoom.factor()`.
