@@ -524,6 +524,13 @@
     // Same shape as Electron's: the browser can't check the backend's disk, so the path passes through.
     sanitizeWorkspaceCwd: function (cwd) { return Promise.resolve({ cwd: typeof cwd === 'string' ? cwd.trim() : '', sanitized: false }); },
     readPluginSource: function () { return Promise.resolve(null); },
+    // The renderer's journal of uncertain sends. Electron keeps it in a file
+    // (`preparedSubmissions.read/update/compareAndSet`); the renderer has a localStorage fallback for
+    // when the member is absent — `native ? await native.read() : localStorage`. Declared null so
+    // the catch-all Proxy answers null instead of a stub: a stub is truthy, its `read()` resolves to
+    // undefined, and `JSON.parse(undefined)` raised "Restore image draft: undefined is not valid
+    // JSON" on every chat open.
+    preparedSubmissions: null,
 
     settings: namespace('settings', {
       get: function (key) { return Promise.resolve(store.get(key, undefined)); },
