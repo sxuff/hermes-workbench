@@ -150,6 +150,12 @@
 .hwb.is-app { position: fixed; inset: 0; width: auto; height: auto; min-height: 0; z-index: 60; }
 .hwb.is-expanded { position: fixed; inset: 0; height: 100dvh; z-index: 60; }
 .hwb-desktop { position: fixed; inset: 0; z-index: 60; background: #0a0a0a; }
+/* The dashboard's top bar and nav sidebar (z-40/z-50) sit outside the content column that
+   useLiftAboveHost raises, and on some browsers (seen on iPad Safari) they still paint over
+   the frame. Hide the host chrome while the desktop frame is mounted; the frame is the whole
+   window. */
+body.hwb-desktop-mounted #root > div > header.fixed,
+body.hwb-desktop-mounted #root aside#app-sidebar { display: none !important; }
 .hwb-desktop iframe { display: block; width: 100%; height: 100%; border: 0; }
 a.hwb-status-item { text-decoration: none; }
 a.hwb-status-item:hover { background: var(--control-hover); color: var(--text-1); }

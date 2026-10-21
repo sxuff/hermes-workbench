@@ -243,6 +243,10 @@ function desktopUrl(profile: string): string {
 function DesktopFrame({ profile }: { profile: string }) {
   const root = useRef(null as HTMLDivElement | null);
   useLiftAboveHost(root);
+  useEffect(() => {
+    document.body.classList.add('hwb-desktop-mounted');
+    return () => document.body.classList.remove('hwb-desktop-mounted');
+  }, []);
   return <div className="hwb-host"><div ref={root} className="hwb-desktop">
     <iframe title="Hermes" src={desktopUrl(profile)} allow="clipboard-read; clipboard-write; microphone"/>
   </div></div>;
