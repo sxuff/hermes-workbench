@@ -112,6 +112,11 @@
   };
 
   var bridge = {
+    // Electron preloads a skin snapshot; browsers receive it later from the gateway.
+    // Keep absence as null, not the callable Proxy fallback (which yields Promise values).
+    localSkin: null,
+    // Browser tabs have no native window controls; null makes the renderer omit them.
+    windowControls: null,
     glassSupported: false, translucencySupported: false, localModelsEnabled: false,
     guestOnboardingEnabled: false, skipIntro: true, dataUrlReadMax: 16 * 1024 * 1024,
 
