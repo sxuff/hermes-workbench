@@ -111,6 +111,22 @@
     set: function (key, value) { try { localStorage.setItem('hermes-web:' + key, JSON.stringify(value)); } catch (e) {} },
   };
 
+  // Match the desktop zoom contract using document scaling in this browser frame.
+  var zoomListeners = new Set();
+  var zoomPercent = store.get('zoomPercent', 100);
+  if (typeof zoomPercent !== 'number' || !Number.isFinite(zoomPercent) || zoomPercent <= 0) zoomPercent = 100;
+  function zoomState() { return { percent: zoomPercent, level: Math.log(zoomPercent / 100) / Math.log(1.2) }; }
+  function setZoomPercent(percent) {
+    if (typeof percent !== 'number' || !Number.isFinite(percent) || percent <= 0) return Promise.resolve(zoomState());
+    zoomPercent = Math.round(Math.min(Math.pow(1.2, 9) * 100, Math.max(Math.pow(1.2, -9) * 100, percent)));
+    document.documentElement.style.zoom = String(zoomPercent / 100);
+    store.set('zoomPercent', zoomPercent);
+    var state = zoomState();
+    zoomListeners.forEach(function (listener) { listener(state); });
+    return Promise.resolve(state);
+  }
+  if (zoomPercent !== 100) document.documentElement.style.zoom = String(zoomPercent / 100);
+
   var bridge = {
     glassSupported: false, translucencySupported: false, localModelsEnabled: false,
     guestOnboardingEnabled: false, skipIntro: true, dataUrlReadMax: 16 * 1024 * 1024,
@@ -192,7 +208,15 @@
       get: function (key) { return Promise.resolve(store.get(key, undefined)); },
       set: function (key, value) { store.set(key, value); return Promise.resolve(true); },
     },
-    zoom: { get: function () { return Promise.resolve(1); }, set: asyncNoop, onChange: unsubscribe },
+    zoom: {
+      get: function () { return Promise.resolve(zoomState()); },
+      setPercent: setZoomPercent,
+      onChanged: function (listener) { zoomListeners.add(listener); return function () { zoomListeners.delete(listener); }; },
+      // Legacy names from the previous shim stay as they were, so older builds that
+      // call them keep their current (no-op) behaviour instead of changing semantics.
+      set: asyncNoop,
+      onChange: function (listener) { return bridge.zoom.onChanged(listener); },
+    },
     wakeIndicator: { getState: function () { return Promise.resolve({}); }, setState: noop, onState: unsubscribe },
     petOverlay: new Proxy({}, { get: function () { return asyncNoop; } }),
     introReveal: { open: asyncNoop, close: asyncNoop, skip: noop, ready: noop, onSkip: unsubscribe },
