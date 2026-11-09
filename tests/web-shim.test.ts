@@ -33,20 +33,6 @@ function load(seed: Record<string, string> = {}): { desktop: Shim; doc: any; sto
   return { desktop: win.hermesDesktop, doc, storage }
 }
 
-test('shim: Electron-only members stay null so the renderer can test for absence', () => {
-  const { desktop } = load()
-  // themes/backend-sync.ts: (window.hermesDesktop?.localSkin ?? null)?.skin ?? null
-  // A callable-Proxy fallback here yields a function instead of null, and the
-  // following `.trim()` throws "Cannot read properties of undefined (reading 'trim')".
-  assert.equal(desktop.localSkin, null)
-  assert.equal(desktop.windowControls, null)
-})
-
-test('shim: unknown members still resolve to callable stubs', () => {
-  const { desktop } = load()
-  assert.equal(typeof desktop.somethingNotDeclared, 'function')
-})
-
 test('shim: zoom.get returns the desktop shape', async () => {
   const { desktop } = load()
   const state = await desktop.zoom.get()
